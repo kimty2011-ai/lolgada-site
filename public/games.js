@@ -172,7 +172,7 @@ function stopGamesSync() { GM.unsub.forEach(u => { try { u() } catch (_) {} }); 
 const int0 = v => Math.max(0, Math.round(+v || 0));
 function normGame(g) {
   if (!g || !Array.isArray(g.teams) || g.teams.length !== 2) return null;
-  return { id: String(g.id), type: g.type === 'team' ? 'team' : 'casual', date: String(g.date || ''), dur: String(g.dur || ''), win: g.win === 2 ? 2 : 1, at: +g.at || 0,
+  return { id: String(g.id), type: g.type === 'team' ? 'team' : 'casual', date: String(g.date || ''), dur: String(g.dur || ''), win: g.win === 2 ? 2 : 1, at: +g.at || 0, src: g.src === 'naejeon' ? 'naejeon' : '',
     teams: g.teams.map(t => ({ k: int0(t.k), d: int0(t.d), a: int0(t.a), gold: int0(t.gold),
       players: (t.players || []).slice(0, 5).map(p => ({ rid: String(p.rid || ''), champ: String(p.champ || ''), lv: int0(p.lv), k: int0(p.k), d: int0(p.d), a: int0(p.a), cs: int0(p.cs), gold: int0(p.gold) })) })) };
 }
@@ -234,7 +234,7 @@ function gChecks(dr) {
     const sum = f => t.players.reduce((s, p) => s + p[f], 0);
     const bad = [['킬', sum('k'), t.k], ['데스', sum('d'), t.d], ['어시스트', sum('a'), t.a], ['골드', sum('gold'), t.gold]].filter(([, a, b]) => b && a !== b);
     if (bad.length) warn.push(`${ti + 1}번 팀 ${bad.map(([n, a, b]) => `${n} 합계 ${a.toLocaleString()} ≠ 화면 ${b.toLocaleString()}`).join(', ')} — 빨간 칸 숫자를 다시 확인해주세요`);
-    t.players.forEach((p, pi) => { if (!p.champ) block.push(`${ti + 1}번 팀 ${pi + 1}번째 챔피언을 골라주세요`); if (!p.rid.trim()) block.push(`${ti + 1}번 팀 ${pi + 1}번째 닉네임이 비어 있어요`) });
+    t.players.forEach((p, pi) => { if (!p.champ) block.push(`${ti + 1}번 팀 ${pi + 1}번째 챔피언을 골라주세요`); if (!p.rid.trim() && GUP?.mode !== 'edit') block.push(`${ti + 1}번 팀 ${pi + 1}번째 닉네임이 비어 있어요`) });
   });
   const dup = gFindDup(dr);
   return { warn, block, dup };
@@ -322,7 +322,7 @@ async function gSave(force) {
 const durSec = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : 0 };
 // 멤버별 누적 (게임은 날짜·업로드 순으로 훑어서 연승도 계산)
 function gStats(games) {
-  const by = new Map(), champs = new Map(); let unknown = new Set(), guests = 0;
+  const by = new Map(), champs = new Map(); let unknown = new Set(), guests = 0, blanks = 0;
   const chron = [...games].sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
   for (const g of chron) {
     const sec = durSec(g.dur);
@@ -333,7 +333,7 @@ function gStats(games) {
         c.n++; if (won) c.w++; c.k += p.k; c.d += p.d; c.a += p.a;
         const m = memberOf(p.rid);
         if (m === 'guest') { guests++; return }
-        if (m == null) { unknown.add(p.rid); return }
+        if (m == null) { if (p.rid) unknown.add(p.rid); else blanks++; return } // 이름 없는 칸(내전롤에서 가져온 기록 일부)
         let s = by.get(m); if (!s) by.set(m, s = { id: m, n: 0, w: 0, k: 0, d: 0, a: 0, cs: 0, gold: 0, kpN: 0, kpD: 0, sec: 0, ch: {}, streak: 0, best: 0, recent: [] });
         s.n++; if (won) s.w++; s.k += p.k; s.d += p.d; s.a += p.a; s.cs += p.cs; s.gold += p.gold;
         if (teamK) { s.kpN += p.k + p.a; s.kpD += teamK }
@@ -348,7 +348,7 @@ function gStats(games) {
     kp: s.kpD ? s.kpN / s.kpD : 0, csm: s.sec ? s.cs / (s.sec / 60) : 0, gpm: s.sec ? s.gold / (s.sec / 60) : 0,
     pool: Object.keys(s.ch).length, recent: s.recent.slice(-5).reverse(),
     most: Object.entries(s.ch).sort((a, b) => b[1] - a[1]).slice(0, 3) }));
-  return { rows, champs: [...champs.values()], unknown: [...unknown], guests };
+  return { rows, champs: [...champs.values()], unknown: [...unknown], guests, blanks };
 }
 const pct = v => Math.round(v * 100) + '%';
 const G_COLS = [
@@ -399,7 +399,7 @@ function renderStats() {
   <div class="card"><div class="h2">📋 멤버 전체 통계 <span class="sub">${games.length}경기 · ${st.rows.length}명 · 열 제목을 누르면 정렬 · # = 순위 (최소 ${need}판)</span></div>
     <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
       <tbody>${ranked.map((s, i) => rowH(s, i)).join('')}${rest.map(s => rowH(s, null)).join('')}</tbody></table></div>
-    ${st.unknown.length || st.guests ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [게임 ID 연결]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
+    ${st.unknown.length || st.guests || st.blanks ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''}${st.blanks ? ` · 이름 없는 기록 ${st.blanks}칸` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [게임 ID 연결]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
   </div>
   <div class="card"><div class="h2">🧩 챔피언 통계 <span class="sub">많이 나온 순 · 게스트·unknown 포함 전체 경기 기준</span></div>
     <div class="g-champs">${champs.map(c => `<div class="g-champ"><img src="${champImg(c.id)}" alt=""><div><b>${esc(champName(c.id))}</b><span class="sub">${c.n}판 · 승률 ${pct(c.w / c.n)} · KDA ${((c.k + c.a) / Math.max(1, c.d)).toFixed(2)}</span></div></div>`).join('')}</div></div>`}
@@ -436,23 +436,23 @@ function gGamesHTML(games) {
   return `<div class="g-games">${games.map(g => `<div class="card g-game" data-a="gview1" data-id="${esc(g.id)}">
     <div class="g-gh"><span class="tag ${g.type === 'team' ? 't-gold' : 't-teal'}">${G_TYPES[g.type]}</span><b>${esc(g.date)}</b><span class="sub">${esc(g.dur)}</span></div>
     ${g.teams.map((t, ti) => `<div class="g-gt ${g.win === ti + 1 ? 'win' : 'lose'}"><span class="g-res">${g.win === ti + 1 ? '승' : '패'}</span>${t.players.map(p => `<img src="${champImg(p.champ)}" alt="" title="${esc(champName(p.champ))} · ${esc(p.rid)}">`).join('')}<span class="sub">${t.k}/${t.d}/${t.a}</span></div>
-      <div class="g-gn">${t.players.map(p => { const m = memberOf(p.rid); return esc(m === 'guest' || m == null ? p.rid : player(m).name) }).join(' · ')}</div>`).join('')}
+      <div class="g-gn">${t.players.map(p => { const m = memberOf(p.rid); return esc(m === 'guest' || m == null ? (p.rid || '?') : player(m).name) }).join(' · ')}</div>`).join('')}
   </div>`).join('')}</div>`;
 }
 async function gViewGame(id) {
   const g = GM.games.find(x => x.id === id); if (!g) return; const A = isAdmin();
-  const nameH = rid => { const m = memberOf(rid); return m === 'guest' ? `${esc(rid)} <span class="tag t-mut">게스트</span>` : m != null ? `${esc(player(m).name)} <span class="sub">${esc(rid)}</span>` : `${esc(rid)} <span class="tag t-amber">unknown</span>` };
+  const nameH = rid => { if (!rid) return '<span class="tag t-mut">이름 없음</span>'; const m = memberOf(rid); return m === 'guest' ? `${esc(rid)} <span class="tag t-mut">게스트</span>` : m != null ? `${esc(player(m).name)} <span class="sub">${esc(rid)}</span>` : `${esc(rid)} <span class="tag t-amber">unknown</span>` };
   const body = img => modal(`<div class="mh">${G_TYPES[g.type]} · ${esc(g.date)} <span class="sub">${esc(g.dur)}</span></div>
     ${g.teams.map((t, ti) => `<div class="g-team ${g.win === ti + 1 ? 'win' : 'lose'}"><div class="g-th"><b>${ti + 1}번 팀 · ${g.win === ti + 1 ? '승리' : '패배'}</b><span class="sub">${t.k} / ${t.d} / ${t.a}</span></div>
       <div class="g-scroll"><table class="g-tbl"><thead><tr><th>챔피언</th><th>멤버</th><th>Lv</th><th>K / D / A</th><th>CS</th><th>골드</th></tr></thead><tbody>
-      ${t.players.map(p => `<tr><td><div class="g-ch"><img src="${champImg(p.champ)}" alt="">${esc(champName(p.champ))}</div></td><td>${nameH(p.rid)}</td><td>${p.lv}</td><td>${p.k} / ${p.d} / ${p.a}</td><td>${p.cs}</td><td>${p.gold.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`).join('')}
-    <div class="rec-full" style="margin-top:12px">${img ? `<img src="${img}" alt="">` : img === '' ? '' : `<div class="hvid-ph" style="aspect-ratio:16/9">🖼️ 원본 스크린샷 불러오는 중…</div>`}</div>
+      ${t.players.map(p => `<tr><td><div class="g-ch"><img src="${champImg(p.champ)}" alt="">${esc(champName(p.champ))}</div></td><td>${nameH(p.rid)}</td><td>${p.lv || '–'}</td><td>${p.k} / ${p.d} / ${p.a}</td><td>${p.cs}</td><td>${p.gold.toLocaleString()}</td></tr>`).join('')}</tbody></table></div></div>`).join('')}
+    <div class="rec-full" style="margin-top:12px">${img ? `<img src="${img}" alt="">` : img === '' ? (g.src === 'naejeon' ? '<div class="sub">📥 내전롤에서 가져온 기록이라 원본 스크린샷이 없어요</div>' : '') : `<div class="hvid-ph" style="aspect-ratio:16/9">🖼️ 원본 스크린샷 불러오는 중…</div>`}</div>
     <div class="mbtns" style="flex-wrap:wrap">${A ? `<button class="btn sm danger" data-a="gmdel" data-id="${esc(id)}" style="margin-right:auto">🗑 삭제</button><button class="btn sm" data-a="gedit" data-id="${esc(id)}">✏️ 수정</button>` : ''}<button class="btn pri" data-a="mclose">닫기</button></div>`, false, 'full');
   body(null);
   try { const s = await fb.fs.getDoc(gDoc('shots', id)); if (!M.classList.contains('hidden')) body(s.exists() ? s.data().img : '') } catch (e) { console.error(e); body('') }
 }
 function gAdminHTML() {
-  const rids = new Map(); GM.games.forEach(g => g.teams.forEach(t => t.players.forEach(p => { const k = nkey(p.rid); if (!rids.has(k)) rids.set(k, { rid: p.rid, n: 0 }); rids.get(k).n++ })));
+  const rids = new Map(); GM.games.forEach(g => g.teams.forEach(t => t.players.forEach(p => { if (!p.rid) return; const k = nkey(p.rid); if (!rids.has(k)) rids.set(k, { rid: p.rid, n: 0 }); rids.get(k).n++ })));
   Object.values(GM.ids).forEach(v => { const k = nkey(v.name); if (!rids.has(k)) rids.set(k, { rid: v.name, n: 0 }) });
   const list = [...rids.values()].sort((a, b) => (memberOf(a.rid) == null ? 0 : 1) - (memberOf(b.rid) == null ? 0 : 1) || b.n - a.n);
   const q = GM.quota;
