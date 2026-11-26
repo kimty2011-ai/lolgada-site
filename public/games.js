@@ -319,54 +319,101 @@ async function gSave(force) {
 }
 
 /* ---------- 통계 ---------- */
+const durSec = s => { const m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : 0 };
+// 멤버별 누적 (게임은 날짜·업로드 순으로 훑어서 연승도 계산)
 function gStats(games) {
-  const by = new Map(); let unknown = new Set(), guests = 0;
-  for (const g of games) g.teams.forEach((t, ti) => t.players.forEach(p => {
-    const m = memberOf(p.rid);
-    if (m === 'guest') { guests++; return }
-    if (m == null) { unknown.add(p.rid); return }
-    let s = by.get(m); if (!s) by.set(m, s = { id: m, n: 0, w: 0, k: 0, d: 0, a: 0, cs: 0, gold: 0, ch: {} });
-    s.n++; if (g.win === ti + 1) s.w++; s.k += p.k; s.d += p.d; s.a += p.a; s.cs += p.cs; s.gold += p.gold; s.ch[p.champ] = (s.ch[p.champ] || 0) + 1;
-  }));
+  const by = new Map(), champs = new Map(); let unknown = new Set(), guests = 0;
+  const chron = [...games].sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at);
+  for (const g of chron) {
+    const sec = durSec(g.dur);
+    g.teams.forEach((t, ti) => {
+      const won = g.win === ti + 1, teamK = t.k || t.players.reduce((s, p) => s + p.k, 0);
+      t.players.forEach(p => {
+        let c = champs.get(p.champ); if (!c) champs.set(p.champ, c = { id: p.champ, n: 0, w: 0, k: 0, d: 0, a: 0 });
+        c.n++; if (won) c.w++; c.k += p.k; c.d += p.d; c.a += p.a;
+        const m = memberOf(p.rid);
+        if (m === 'guest') { guests++; return }
+        if (m == null) { unknown.add(p.rid); return }
+        let s = by.get(m); if (!s) by.set(m, s = { id: m, n: 0, w: 0, k: 0, d: 0, a: 0, cs: 0, gold: 0, kpN: 0, kpD: 0, sec: 0, ch: {}, streak: 0, best: 0, recent: [] });
+        s.n++; if (won) s.w++; s.k += p.k; s.d += p.d; s.a += p.a; s.cs += p.cs; s.gold += p.gold;
+        if (teamK) { s.kpN += p.k + p.a; s.kpD += teamK }
+        if (sec) s.sec += sec; else s.noSec = true;
+        s.ch[p.champ] = (s.ch[p.champ] || 0) + 1;
+        s.streak = won ? s.streak + 1 : 0; s.best = Math.max(s.best, s.streak);
+        s.recent.push(won);
+      });
+    });
+  }
   const rows = [...by.values()].map(s => ({ ...s, l: s.n - s.w, wr: s.w / s.n, kda: (s.k + s.a) / Math.max(1, s.d), perfect: s.d === 0,
+    kp: s.kpD ? s.kpN / s.kpD : 0, csm: s.sec ? s.cs / (s.sec / 60) : 0, gpm: s.sec ? s.gold / (s.sec / 60) : 0,
+    pool: Object.keys(s.ch).length, recent: s.recent.slice(-5).reverse(),
     most: Object.entries(s.ch).sort((a, b) => b[1] - a[1]).slice(0, 3) }));
-  return { rows, unknown: [...unknown], guests };
+  return { rows, champs: [...champs.values()], unknown: [...unknown], guests };
 }
+const pct = v => Math.round(v * 100) + '%';
 const G_COLS = [
-  { k: 'n', h: '판수', v: s => s.n }, { k: 'w', h: '승', v: s => s.w }, { k: 'l', h: '패', v: s => s.l },
-  { k: 'wr', h: '승률', v: s => s.wr }, { k: 'kda', h: 'KDA', v: s => s.kda },
-  { k: 'k', h: '평균 K/D/A', v: s => s.k / s.n }, { k: 'cs', h: '평균 CS', v: s => s.cs / s.n }, { k: 'gold', h: '평균 골드', v: s => s.gold / s.n },
+  { k: 'n', h: '판수', v: s => s.n, f: s => s.n }, { k: 'w', h: '승', v: s => s.w, f: s => s.w }, { k: 'l', h: '패', v: s => s.l, f: s => s.l },
+  { k: 'wr', h: '승률', v: s => s.wr, f: s => `<b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b>` },
+  { k: 'kda', h: 'KDA', v: s => s.kda, f: s => `<b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b>` },
+  { k: 'k', h: '평균 K/D/A', v: s => s.k / s.n, f: s => `${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}` },
+  { k: 'kp', h: '킬관여', v: s => s.kp, f: s => pct(s.kp) },
+  { k: 'csm', h: '분당 CS', v: s => s.csm, f: s => s.csm.toFixed(1) },
+  { k: 'gpm', h: '분당 골드', v: s => s.gpm, f: s => Math.round(s.gpm).toLocaleString() },
+];
+// 부문별 TOP 3 (순위이므로 최소 판수를 채운 멤버만)
+const G_BOARDS = [
+  { e: '🏆', n: '승률', v: s => s.wr, f: s => `${pct(s.wr)} <span class="sub">${s.w}승 ${s.l}패</span>` },
+  { e: '⚔️', n: 'KDA', v: s => s.kda, f: s => s.perfect ? 'Perfect' : s.kda.toFixed(2) },
+  { e: '🤝', n: '킬관여율', v: s => s.kp, f: s => pct(s.kp), d: '(킬+어시) ÷ 팀 킬' },
+  { e: '🗡️', n: '평균 킬', v: s => s.k / s.n, f: s => (s.k / s.n).toFixed(1) },
+  { e: '🛡️', n: '생존왕', v: s => -s.d / s.n, f: s => `평균 ${(s.d / s.n).toFixed(1)}데스`, d: '데스가 적은 순' },
+  { e: '🌾', n: '분당 CS', v: s => s.csm, f: s => s.csm.toFixed(1) },
+  { e: '💰', n: '분당 골드', v: s => s.gpm, f: s => Math.round(s.gpm).toLocaleString() },
+  { e: '🔥', n: '최장 연승', v: s => s.best, f: s => `${s.best}연승` },
+  { e: '🎮', n: '최다 출전', v: s => s.n, f: s => `${s.n}판` },
+  { e: '🧙', n: '챔피언 폭', v: s => s.pool, f: s => `${s.pool}개`, d: '서로 다른 챔피언 수' },
 ];
 function renderStats() {
   const games = GM.games.filter(g => GM.filter === 'all' || g.type === GM.filter);
   const st = gStats(games), need = exposeNeed(games.length) || 0, col = G_COLS.find(c => c.k === GM.sort) || G_COLS[3];
-  const sorted = st.rows.sort((a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n || b.wr - a.wr);
-  const shown = sorted.filter(s => s.n >= need), hidden = sorted.filter(s => s.n < need), A = isAdmin();
-  const q = GM.quota, connected = !!(fb && fb.fs);
+  const byCol = (a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n || b.wr - a.wr;
+  const ranked = st.rows.filter(s => s.n >= need).sort(byCol), rest = st.rows.filter(s => s.n < need).sort(byCol);
+  const A = isAdmin(), connected = !!(fb && fb.fs);
   const mostH = s => s.most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="${esc(champName(id))}">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('');
-  const rowH = (s, i) => { const m = player(s.id); return `<tr><td class="g-rk">${i == null ? '' : i + 1}</td><td class="g-nm">${m ? nmH(m) : '?'}</td><td>${s.n}</td><td>${s.w}</td><td>${s.l}</td>
-    <td><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${Math.round(s.wr * 100)}%</b></td><td><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b></td>
-    <td>${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}</td><td>${Math.round(s.cs / s.n)}</td><td>${Math.round(s.gold / s.n).toLocaleString()}</td><td class="g-mosts">${mostH(s)}</td></tr>` };
+  const formH = s => s.recent.map(w => `<i class="g-form ${w ? 'w' : 'l'}">${w ? '승' : '패'}</i>`).join('');
+  const rowH = (s, i) => { const m = player(s.id); return `<tr class="${i == null ? 'g-unranked' : ''}"><td class="g-rk">${i == null ? `<span class="sub" title="최소 ${need}판부터 순위">${need - s.n}판 더</span>` : i + 1}</td><td class="g-nm">${m ? nmH(m) : '?'}</td>
+    ${G_COLS.map(c => `<td>${c.f(s)}</td>`).join('')}<td class="g-forms">${formH(s)}</td><td class="g-mosts">${mostH(s)}</td></tr>` };
   const th = c => `<th class="g-sort ${GM.sort === c.k ? 'on' : ''}" data-a="gsort" data-v="${c.k}">${c.h}${GM.sort === c.k ? (GM.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
-  V.innerHTML = `${gHeadHTML('📊 내전 통계', '경기 종료 후 [점수판] 화면을 캡처해서 올리면 자동으로 집계돼요')}
+  const boards = G_BOARDS.map(b => { const top = [...ranked].sort((x, y) => b.v(y) - b.v(x) || y.n - x.n).slice(0, 3);
+    return `<div class="g-board"><div class="g-bh">${b.e} ${b.n}${b.d ? ` <span class="sub">${b.d}</span>` : ''}</div>
+      ${top.map((s, i) => `<div class="g-bt"><span class="g-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="g-bn">${esc(player(s.id)?.name || '?')}</span><span class="g-bv">${b.f(s)}</span></div>`).join('') || '<div class="sub">순위 조건을 채운 멤버가 없어요</div>'}</div>` }).join('');
+  const champs = st.champs.filter(c => c.id).sort((a, b) => b.n - a.n || b.w / b.n - a.w / a.n).slice(0, 12);
+  V.innerHTML = `<div class="sec-head"><div><div class="h1">📊 내전 통계</div>
+    <div class="sub">📜 내전 기록 탭에 올라온 경기로 자동 집계 · 통계는 1판만 뛰어도 들어가고, <b style="color:var(--txt)">순위는 최소 판수를 채운 멤버만</b> 매겨져요</div></div>
+    <button class="btn" data-a="tab" data-v="records">📤 결과 올리러 가기</button></div>
+  ${gFilterHTML()}
   ${!connected ? `<div class="empty-note card">🔌 서버에 연결되면 통계가 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>`
-    : `
-  <div class="card"><div class="h2">🏅 랭킹 <span class="sub">${games.length}경기 · ${need ? `최소 ${need}판 이상 참여해야 순위 노출` : '참여한 멤버 모두 노출'}</span></div>
-    ${shown.length ? `<div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th>${G_COLS.map(th).join('')}<th>모스트</th></tr></thead><tbody>${shown.map((s, i) => rowH(s, i)).join('')}</tbody></table></div>`
-      : `<div class="empty-note">${games.length ? '아직 순위 노출 조건을 채운 멤버가 없어요' : '📭 아직 올라온 경기가 없어요 · [📤 결과 올리기]로 시작해보세요'}</div>`}
-    ${hidden.length ? `<details class="g-hidden"><summary>판수 부족으로 순위 미노출 ${hidden.length}명 (${need}판 미만)</summary><div class="g-scroll"><table class="g-tbl g-rank"><tbody>${hidden.map(s => rowH(s, null)).join('')}</tbody></table></div></details>` : ''}
+    : !games.length ? `<div class="card empty-note" style="padding:40px 14px">📭 아직 올라온 경기가 없어요 · 📜 내전 기록 탭에서 결과를 올려보세요</div>` : `
+  <div class="card"><div class="h2">🏅 부문별 순위 <span class="sub">${need ? `최소 ${need}판 이상 · 순위 대상 ${ranked.length}명` : '참여한 멤버 모두 대상'}</span></div>
+    <div class="g-boards">${boards}</div></div>
+  <div class="card"><div class="h2">📋 멤버 전체 통계 <span class="sub">${games.length}경기 · ${st.rows.length}명 · 열 제목을 누르면 정렬 · # = 순위 (최소 ${need}판)</span></div>
+    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
+      <tbody>${ranked.map((s, i) => rowH(s, i)).join('')}${rest.map(s => rowH(s, null)).join('')}</tbody></table></div>
     ${st.unknown.length || st.guests ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [게임 ID 연결]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
-  </div>`}
+  </div>
+  <div class="card"><div class="h2">🧩 챔피언 통계 <span class="sub">많이 나온 순 · 게스트·unknown 포함 전체 경기 기준</span></div>
+    <div class="g-champs">${champs.map(c => `<div class="g-champ"><img src="${champImg(c.id)}" alt=""><div><b>${esc(champName(c.id))}</b><span class="sub">${c.n}판 · 승률 ${pct(c.w / c.n)} · KDA ${((c.k + c.a) / Math.max(1, c.d)).toFixed(2)}</span></div></div>`).join('')}</div></div>`}
   ${A && connected ? gAdminHTML() : ''}`;
   gAfterRender();
 }
-// 통계·기록 탭 공통: 제목 + 오늘 사용량 + 올리기 버튼 + 종류 필터
+const gFilterHTML = () => `<div class="card toolbar"><div class="g-seg">${[['all', '전체'], ['casual', G_TYPES.casual], ['team', G_TYPES.team]].map(([k, n]) => `<button class="chip ${GM.filter === k ? 'on' : ''}" data-a="gfilter" data-v="${k}">${n}</button>`).join('')}</div></div>`;
+// 기록 탭: 제목 + 오늘 사용량 + 올리기 버튼 + 종류 필터
 function gHeadHTML(title, sub) {
   const q = GM.quota, connected = !!(fb && fb.fs);
   return `<div class="sec-head"><div><div class="h1">${title}</div>
     <div class="sub">${sub} · 누구나 올릴 수 있고, 저장된 기록 수정은 운영진만 · 이 화면에 <b style="color:var(--txt)">끌어다 놓거나 Ctrl+V</b>로도 올릴 수 있어요</div></div>
     <div class="row gap wrapr">${q && !q.pending ? `<span class="tag ${q.used >= q.limit ? 't-red' : 't-mut'}">오늘 ${q.used} / ${q.limit}장</span>` : ''}<button class="btn pri" data-a="gup" ${connected ? '' : 'disabled'}>📤 결과 올리기</button></div></div>
-  <div class="card toolbar"><div class="g-seg">${[['all', '전체'], ['casual', G_TYPES.casual], ['team', G_TYPES.team]].map(([k, n]) => `<button class="chip ${GM.filter === k ? 'on' : ''}" data-a="gfilter" data-v="${k}">${n}</button>`).join('')}</div></div>`;
+  ${gFilterHTML()}`;
 }
 function gAfterRender() {
   const connected = !!(fb && fb.fs);
@@ -452,8 +499,9 @@ Object.assign(CHG, {
 const gFileIn = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true, hidden: true, id: 'gamef' });
 document.body.append(gFileIn);
 gFileIn.addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) gOpenUpload(fs) });
+const gUpTab = () => UI.tab === 'records' && M.classList.contains('hidden'); // 결과 올리기는 기록 탭에서만
 document.addEventListener('paste', e => {
-  if (!gTabOpen()) return;
+  if (!gUpTab()) return;
   const fs = [...(e.clipboardData?.items || [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
   if (fs.length) { e.preventDefault(); gOpenUpload(fs) }
 });
@@ -462,12 +510,12 @@ const gDropCover = Object.assign(document.createElement('div'), { className: 'g-
 document.body.append(gDropCover);
 let gDragDepth = 0;
 const gHasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
-document.addEventListener('dragenter', e => { if (gTabOpen() && gHasFiles(e)) { gDragDepth++; gDropCover.classList.add('on') } });
+document.addEventListener('dragenter', e => { if (gUpTab() && gHasFiles(e)) { gDragDepth++; gDropCover.classList.add('on') } });
 document.addEventListener('dragleave', e => { if (gHasFiles(e) && --gDragDepth <= 0) { gDragDepth = 0; gDropCover.classList.remove('on') } });
-document.addEventListener('dragover', e => { if (gTabOpen() && gHasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } });
+document.addEventListener('dragover', e => { if (gUpTab() && gHasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } });
 document.addEventListener('drop', e => {
   gDragDepth = 0; gDropCover.classList.remove('on');
-  if (!gTabOpen() || !gHasFiles(e)) return;
+  if (!gUpTab() || !gHasFiles(e)) return;
   e.preventDefault(); gOpenUpload(e.dataTransfer.files);
 });
 const gBusy = () => !!GUP?.busy || GUP?.step === 'read';
@@ -512,6 +560,17 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .g-gt{display:flex;gap:4px;align-items:center;margin-top:4px}.g-gt img{width:26px;height:26px;border-radius:50%}
 .g-gt.lose img{opacity:.55;filter:grayscale(.5)}
 .g-res{font-weight:900;width:20px;font-size:12px}.g-gt.win .g-res{color:var(--teal2)}.g-gt.lose .g-res{color:var(--red)}
+.subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:8px;border-radius:14px;background:var(--glass);border:1px solid var(--line2)}
+body.capture .subtabs{display:none}
+.g-boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.g-board{border:1px solid var(--line2);border-radius:14px;padding:10px 12px;background:var(--glass)}
+.g-bh{font-weight:900;margin-bottom:6px}.g-bt{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px}
+.g-bn{flex:1;min-width:0;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.g-bv{font-weight:800;color:var(--teal2);white-space:nowrap}
+.g-unranked td{opacity:.62}.g-unranked td.g-rk{opacity:1}
+.g-forms{white-space:nowrap}.g-form{display:inline-block;font-style:normal;font-size:10.5px;font-weight:900;width:18px;height:18px;line-height:18px;text-align:center;border-radius:5px;margin-right:2px}
+.g-form.w{background:rgba(10,200,185,.2);color:var(--teal2)}.g-form.l{background:rgba(255,84,104,.16);color:var(--red)}
+.g-champs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.g-champ{display:flex;gap:10px;align-items:center;padding:6px 8px;border:1px solid var(--line2);border-radius:12px}.g-champ img{width:34px;height:34px;border-radius:50%}.g-champ div{display:flex;flex-direction:column}
 .g-gn{font-size:11px;color:var(--mut);margin:1px 0 4px 24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .g-old{margin-top:14px}.g-old summary{cursor:pointer;font-weight:800}
 .g-drop{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(5,10,20,.78);border:3px dashed var(--teal);pointer-events:none}
