@@ -785,6 +785,8 @@ document.addEventListener('drop', e => {
 });
 const gBusy = () => !!GUP?.busy || GUP?.step === 'read';
 const gOnClose = () => { GUP = null };
+// 서버 연결이 이 파일보다 먼저 끝났으면 index.html 쪽 호출을 놓쳤으니 여기서 시작
+if (fb && fb.fs && !GM.unsub.length) startGamesSync();
 
 /* ---------- 스타일 ---------- */
 document.head.append(Object.assign(document.createElement('style'), { textContent: `

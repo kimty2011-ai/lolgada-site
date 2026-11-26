@@ -250,6 +250,8 @@ Object.assign(ACT, {
   dreset: () => ask('↺ 처음부터', '팀장·팀 구성을 지우고 참가자 선택으로 돌아갈까요? (참가자 체크는 유지돼요)', () => commitD(d => { const keep = { in: d.in, mode: d.mode }; Object.assign(d, defaultD(), keep) }), '처음부터'),
 });
 Object.assign(INP, { dq: el => { DSYNC.q = el.value; renderDraftKeepSearch() } });
+// 서버 연결이 이 파일보다 먼저 끝났으면 index.html 쪽 호출을 놓쳤으니 여기서 시작
+if (fb && fb.fs && !DSYNC.unsub) startDraftSync();
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
 .d-steps{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
