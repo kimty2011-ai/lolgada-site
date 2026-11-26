@@ -38,7 +38,19 @@ function renderMembers() {
       <tbody>${rows || `<tr><td colspan="4" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
 }
 
-const mWrite = (id, r) => fb.fs.setDoc(gDoc('roster', String(id)), { tier: r.tier || '', main: r.main || '', sub: r.sub || '', at: Date.now() });
+// 🏠 홈: 포지션 수급 현황 (멤버 탭의 주라인·부라인 기준)
+function mSupplyHTML() {
+  const n = S.players.length, mx = Math.max(1, n / 2);
+  const sup = G_POS.map(k => ({ k, main: S.players.filter(p => rosterOf(p.id).main === k).length, sub: S.players.filter(p => rosterOf(p.id).sub === k).length }));
+  const none = S.players.filter(p => !PK[rosterOf(p.id).main]).length;
+  return `<div class="card"><div class="h2">🧭 포지션 수급 현황 <span class="sub">멤버 ${n}명 기준</span><button class="btn sm mla" data-a="tab" data-v="members">👥 멤버 보기 ›</button></div>
+    <div class="supply">${sup.map(s => `<div class="sup"><span>${PK[s.k].e} ${PK[s.k].n}</span>
+      <div class="track"><i class="any" style="width:${Math.min(100, (s.main + s.sub) / mx * 100)}%"></i><i class="first" style="width:${Math.min(100, s.main / mx * 100)}%"></i></div>
+      <em>주 ${s.main} · 부 ${s.sub}</em></div>`).join('')}</div>
+    <div class="sub" style="margin-top:10px">진한 막대 = 주라인 · 연한 막대 = 부라인까지 포함${none ? ` · ❔ 주라인 미정 <b style="color:var(--txt)">${none}명</b> — 👥 멤버 탭에서 정해주세요` : ' · 모든 멤버 주라인 등록 완료 👏'}</div></div>`;
+}
+
+const mWrite =(id, r) => fb.fs.setDoc(gDoc('roster', String(id)), { tier: r.tier || '', main: r.main || '', sub: r.sub || '', at: Date.now() });
 async function mSave(el, field) {
   if (!isAdmin()) { toast('운영진만 바꿀 수 있어요', 'err'); render(); return }
   const id = Number(el.dataset.id), cur = { ...rosterOf(id) }; cur[field] = el.value || '';
@@ -76,5 +88,6 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .m-tier{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:800;font-size:12px;color:var(--c);border:1px solid var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
 .m-sel{min-width:110px;padding:4px 6px;font-size:13px}
 .m-tbl td{vertical-align:middle}
+.sup{grid-template-columns:72px 1fr 92px}
 .m-lanes{margin:0 0 10px;flex-wrap:wrap}
 ` }));

@@ -151,7 +151,7 @@ async function gApi(body) {
   if (d && d.limit != null) GM.quota = { used: d.used, limit: d.limit };
   return d;
 }
-const gTabOpen = () => ['stats', 'records', 'members'].includes(UI.tab) && M.classList.contains('hidden');
+const gTabOpen = () => ['home', 'stats', 'records', 'members'].includes(UI.tab) && M.classList.contains('hidden');
 const refreshQuota =() => gApi({ action: 'status' }).then(() => gTabOpen() && render()).catch(() => {});
 
 /* ---------- Firestore ---------- */
@@ -191,15 +191,9 @@ function normGame(g) {
 /* ---------- 시즌 · 포지션 ---------- */
 const G_POS = ['TOP', 'JGL', 'MID', 'ADC', 'SUP'];
 const posLabel = k => PK[k] ? `${PK[k].e} ${PK[k].n}` : '–';
-// 시즌 시작일 (내전롤과 같음) · 이후 시즌은 사이트 설정(시즌 이름·시작일)을 따른다
-const G_SEASONS = [[1, '2026-08-01'], [2, '2026-09-01'], [3, '2026-10-01'], [4, '2026-11-01']];
-const curSeason = () => +((S.meta?.name || '').match(/\d+/)?.[0]) || 4;
-function seasonOf(date) {
-  const list = [...G_SEASONS]; const cs = curSeason(), st = S.meta?.start;
-  if (st && !list.some(([n]) => n === cs)) list.push([cs, st]);
-  let n = list[0][0]; for (const [k, s] of list.sort((a, b) => a[1].localeCompare(b[1]))) if (date >= s) n = k;
-  return n;
-}
+// 시즌 = 경기 날짜의 달 (index.html seasonNo: 2026년 8월 = 시즌1, 내전롤과 같음)
+const curSeason = () => seasonNo(autoMeta().start);
+const seasonOf = date => seasonNo(date);
 const seasonName = n => n === 'all' ? '통합 (전 시즌)' : `시즌 ${n}`;
 const gSeasonList = () => [...new Set([curSeason(), ...GM.games.map(g => g.season)])].sort((a, b) => b - a);
 const gSeasonSel = () => GM.season === 'cur' ? curSeason() : GM.season;
@@ -313,7 +307,7 @@ function gModal() {
     <div class="g-top">${u.thumb ? `<img class="g-thumb" src="${u.thumb}" alt="">` : ''}
       <div class="g-meta">
         <div><label class="fl">경기 종류 *</label><div class="g-seg">${Object.entries(G_TYPES).map(([k, n]) => `<button class="chip ${dr.type === k ? 'on' : ''}" data-a="gtype" data-v="${k}" ${u.busy ? 'disabled' : ''}>${n}</button>`).join('')}</div></div>
-        <div class="row2"><div><label class="fl">경기 날짜</label><input class="inp" type="date" style="width:100%" value="${esc(dr.date)}" data-c="gdate" ${u.busy ? 'disabled' : ''}></div>
+        <div class="row2"><div><label class="fl">경기 날짜 <span class="g-slbl" id="gSeasonLbl">→ ${seasonName(seasonOf(dr.date))} 기록</span></label><input class="inp" type="date" style="width:100%" value="${esc(dr.date)}" data-c="gdate" ${u.busy ? 'disabled' : ''}></div>
           <div><label class="fl">경기 시간</label><input class="inp" style="width:100%" value="${esc(dr.dur)}" placeholder="mm:ss" data-c="gdur" ${u.busy ? 'disabled' : ''}></div></div>
         <div class="sub">💡 저장 전까지는 잘못 읽힌 값을 고칠 수 있어요 · 저장 후 수정은 운영진만 · 멤버를 고르면 그 게임 ID가 멤버에 계속 연결돼요 · 포지션은 자동으로 추측한 값이니 다르면 고쳐주세요</div>
       </div></div>
@@ -446,6 +440,9 @@ function gAwards(games, st, need) {
   const wilson = (w, n) => { const z = 1.96, p = w / n; return (p + z * z / (2 * n) - z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))) / (1 + z * z / n) };
   const bd = top([...duo.entries()].filter(([, d]) => d.n >= 5), x => wilson(x[1].w, x[1].n));
   if (bd) { const [a, b] = bd[0].split(':').map(Number); add('🤝', '최고의 듀오', '같은 팀일 때 승률이 가장 높은 두 선수 조합 (5판 이상)', `${nm(a)} <span class="sub">&amp;</span> ${nm(b)}`, `승률 ${pct(bd[1].w / bd[1].n)} · ${bd[1].n}게임`, `${bd[1].w}승 / ${bd[1].n}판`) }
+  // 최악: 승률 신뢰구간 상한이 가장 낮은 조합 (= 1 - 패배율의 하한)
+  const wd = top([...duo.entries()].filter(([, d]) => d.n >= 5), x => wilson(x[1].n - x[1].w, x[1].n));
+  if (wd && wd[1].w / wd[1].n < 0.5) { const [a, b] = wd[0].split(':').map(Number); add('💔', '최악의 듀오', '같은 팀일 때 승률이 가장 낮은 두 선수 조합 (5판 이상)', `${nm(a)} <span class="sub">&amp;</span> ${nm(b)}`, `승률 ${pct(wd[1].w / wd[1].n)} · ${wd[1].n}게임`, `${wd[1].w}승 / ${wd[1].n}판`) }
   // 견우와 직녀: 둘 다 많이 뛰었는데 같은 팀으로는 가장 적게 만난 두 명
   let far = null; const ids = qual.map(s => s.id);
   for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
@@ -824,7 +821,7 @@ Object.assign(CHG, {
   grid: el => { const p = gP(el); if (!p) return; const r = resolveName(el.value); p.rid = r.rid; p.read = el.value; p.how = r.how === 'fuzzy' ? 'fuzzy' : r.how; gRefreshChecks() },
   gmem: el => { const p = gP(el); if (!p) return; p.pick = el.value; el.classList.toggle('unk', !el.value) },
   gwin: el => { if (!GUP?.draft) return; GUP.draft.win = +el.value; gRefreshChecks() },
-  gdate: el => { if (!GUP?.draft) return; GUP.draft.date = el.value; gRefreshChecks() },
+  gdate: el => { if (!GUP?.draft) return; GUP.draft.date = el.value; const l = $('#gSeasonLbl'); if (l) l.textContent = `→ ${seasonName(seasonOf(el.value))} 기록`; gRefreshChecks() },
   gdur: el => { if (!GUP?.draft) return; GUP.draft.dur = el.value.trim(); gRefreshChecks() },
   glink: el => gSetLink(el.dataset.v, el.value),
   gseason: el => { GM.season = el.value === 'all' ? 'all' : +el.value; render() },
@@ -866,6 +863,46 @@ const gBusy = () => !!GUP?.busy || GUP?.step === 'read';
 const gOnClose = () => { GUP = null };
 // 서버 연결이 이 파일보다 먼저 끝났으면 index.html 쪽 호출을 놓쳤으니 여기서 시작
 if (fb && fb.fs && !GM.unsub.length) startGamesSync();
+
+/* ---------- 🏠 홈: 이번 시즌 일반 내전 하이라이트 ---------- */
+function gHomeHTML() {
+  if (!GM.got) return `<div class="card empty-note">⏳ 내전 기록 불러오는 중…</div>`;
+  const cs = curSeason(), games = GM.games.filter(g => g.season === cs && g.type === 'casual');
+  if (!games.length) return `<div class="card empty-note" style="padding:30px 14px">📭 ${seasonName(cs)} 일반 내전 기록이 아직 없어요<br><span class="sub">📜 기록 탭에서 결과 스크린샷을 올리면 여기에 하이라이트가 떠요</span></div>`;
+  const need = exposeNeed(games.length) || 0, st = gRanked(games, need, rankW()), nm = id => esc(player(id)?.name || '?');
+  const aw = Object.fromEntries(gAwards(games, st, need).map(a => [a.n, a]));
+  const awH = a => a ? `<div class="g-award"><div class="g-aw-e">${a.e}</div><div class="g-aw-b"><div class="g-aw-t">${a.n}</div><div class="g-aw-w">${a.who}</div><div class="g-aw-v">${a.val}${a.sub ? ` <span class="sub">· ${a.sub}</span>` : ''}</div></div></div>` : '';
+  // 최근 폼: 최근 10판 승률 (5판 이상)
+  const form = st.rows.filter(s => s.seq.length >= 5).map(s => { const r = s.seq.slice(-10); return { s, w: r.filter(Boolean).length, n: r.length } }).sort((a, b) => b.w / b.n - a.w / a.n || b.n - a.n)[0];
+  const formA = form && { e: '📈', n: '최근 폼 1위', who: nm(form.s.id), val: `최근 ${form.n}판 ${form.w}승 · 승률 ${pct(form.w / form.n)}` };
+  // 지난 내전 하이라이트: 마지막 날짜의 경기
+  const last = games.reduce((m, g) => g.date > m ? g.date : m, ''), day = games.filter(g => g.date === last);
+  const dayMvp = Object.fromEntries(gAwards(day, gStats(day), 0).map(a => [a.n, a]))['MVP 빈도'];
+  let bestK = null; day.forEach(g => g.teams.forEach(t => t.players.forEach(p => { const m = memberOf(p.rid); if (m != null && m !== 'guest' && (!bestK || p.k > bestK.k)) bestK = { ...p, m } })));
+  // 챔피언: 많이 뽑힌 3 · 우리 티어 상위 3
+  const tiers = champTiers(st.champs.filter(c => c.id), games.length);
+  const chH = (c, sub) => `<div class="g-smost"><img src="${champImg(c.id)}" alt=""><div><b>${esc(champName(c.id))}</b><span class="sub">${sub}</span></div>${tierBadge(tiers.get(c.id)?.tier ?? 5)}</div>`;
+  const picked = [...st.champs].filter(c => c.id).sort((a, b) => b.n - a.n).slice(0, 3), best = [...st.champs].filter(c => c.id).sort((a, b) => (tiers.get(b.id)?.sc ?? -99) - (tiers.get(a.id)?.sc ?? -99)).slice(0, 3);
+  const top1 = st.ranked[0];
+  return `<div class="stats">
+    <div class="stat"><span class="e">🎮</span><div class="k">${seasonName(cs)} 내전</div><div class="v">${games.length}<small>판</small></div></div>
+    <div class="stat"><span class="e">👥</span><div class="k">참가 멤버</div><div class="v">${st.rows.length}<small>명</small></div></div>
+    <div class="stat"><span class="e">📅</span><div class="k">마지막 내전</div><div class="v" style="font-size:20px;padding-top:6px">${last.slice(5).replace('-', '/')}</div></div>
+    <div class="stat"><span class="e">👑</span><div class="k">시즌 1위</div><div class="v" style="font-size:18px;padding-top:6px">${top1 ? nm(top1.id) : '–'}</div></div>
+  </div>
+  <div class="home-grid">
+    <div class="card"><div class="h2">🔥 지금 뜨거운 사람들</div><div class="g-awards h-aw">${[aw['연승 중'], aw['연패 중'], formA].map(awH).join('') || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>
+    <div class="card"><div class="h2">🤝 케미 기록 <span class="sub">5판 이상 조합</span></div><div class="g-awards h-aw">${[aw['최고의 듀오'], aw['최악의 듀오'], aw['인간상성']].map(awH).join('') || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>
+    <div class="card"><div class="h2">🏆 ${seasonName(cs)} 순위 TOP 5 <button class="btn sm mla" data-a="tab" data-v="stats">전체 순위 ›</button></div>
+      <div class="toplist">${st.ranked.slice(0, 5).map((s, i) => `<div class="trow"><span class="rk">${['🥇', '🥈', '🥉', '4', '5'][i]}</span><b>${nm(s.id)}</b> <span class="sub">${s.n}판 · 승률 ${pct(s.wr)} · KDA ${s.kda.toFixed(2)}</span><span class="sc">${s.score.toFixed(1)}</span></div>`).join('') || `<div class="empty-note">${need}판 이상 뛴 멤버가 아직 없어요</div>`}</div></div>
+    <div class="card"><div class="h2">🧩 요즘 핫한 챔피언</div>
+      <div class="sub" style="margin:2px 0 6px">많이 뽑힌</div>${picked.map(c => chH(c, `${c.n}픽 · 승률 ${pct(c.w / c.n)}`)).join('')}
+      <div class="sub" style="margin:10px 0 6px">우리 티어 최상위</div>${best.map(c => chH(c, `${c.n}픽 · 승률 ${pct(c.w / c.n)}`)).join('')}</div>
+    <div class="card"><div class="h2">📅 지난 내전 하이라이트 <span class="sub">${last} · ${day.length}판</span></div>
+      <div class="g-awards h-aw">${awH(dayMvp ? { ...dayMvp, n: '그날 MVP' } : null)}${bestK ? awH({ e: '🗡️', n: '한 판 최다 킬', who: nm(bestK.m), val: `${bestK.k}킬 (${bestK.k}/${bestK.d}/${bestK.a})`, sub: esc(champName(bestK.champ)) }) : ''}</div>
+      <button class="btn sm" style="margin-top:10px" data-a="tab" data-v="records">📜 그날 기록 보기 ›</button></div>
+  </div>`;
+}
 
 /* ---------- 스타일 ---------- */
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
@@ -936,6 +973,7 @@ body.capture .subtabs{display:none}
 .g-tier{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 6px;border-radius:6px;font-weight:900;font-size:12px;color:#fff}
 .g-tier.t0{background:#e84057}.g-tier.t1{background:#0093ff}.g-tier.t2{background:#00bba3}.g-tier.t3{background:#ffb900;color:#2a2300}.g-tier.t4{background:#9aa4af;color:#111}.g-tier.t5{background:#a88a67}
 .g-ext{margin-left:6px;font-size:10.5px}
+.g-slbl{margin-left:6px;color:var(--teal2,#5fe3d0);font-weight:800}
 .g-vtabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--line2)}
 .g-vtabs button{padding:10px 16px;font-weight:900;font-size:14px;color:var(--mut);border:0;background:none;border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer}
 .g-vtabs button.on{color:var(--txt);border-bottom-color:var(--teal)}

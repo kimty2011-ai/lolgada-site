@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#050a14">
-<title>롤가다 · 시즌4 팀대항전 센터</title>
+<title>롤가다 · 협곡에 인생 건 롤대남들</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -646,7 +646,7 @@ details.fbhelp ol{margin:10px 0 0 18px;display:grid;gap:6px;color:#c5d1e2}
   <div class="top-in">
     <div class="brand" data-a="tab" data-v="home">
       <img class="logo-img" alt="롤가다 로고">
-      <div><b>롤가다</b><small id="hdrSeason">시즌4 내전 · 팀대항전 센터</small></div>
+      <div><b>롤가다</b><small id="hdrSeason">협곡에 인생 건 롤대남들</small></div>
     </div>
     <div class="top-r" id="hdrR"></div>
   </div>
@@ -969,8 +969,8 @@ const V=$('#view');
 const TEAM_TABS=['roster','sheet','build','bracket','cfg'];
 function navTabs(){const out=[];TABS.forEach(t=>{if(!TEAM_TABS.includes(t.k))return out.push(t);if(t.k===TEAM_TABS[0])out.push({k:UI.lastTeam||'sheet',n:'🏆 팀 대항전',grp:1})});return out}
 function renderHeader(){
+  Object.assign(S.meta,autoMeta()); // 저장된 값과 상관없이 항상 이번 달 시즌
   $('#tabs').innerHTML=navTabs().map(t=>`<button class="tab ${(t.grp?TEAM_TABS.includes(UI.tab):UI.tab===t.k)?'on':''}" data-a="tab" data-v="${t.k}">${t.n}</button>`).join('');
-  $('#hdrSeason').textContent=`${S.meta.name} 내전 · 팀대항전 센터`;
   const st=L.sync?UI.sync:'off';
   const dotC={wait:'wait',live:'live',err:'err'}[st]||'';
   const txt=L.sync?{off:'공유 대기',wait:'연결 중…',live:'실시간 공유',err:'공유 연결 실패'}[st]:'로컬 저장';
@@ -994,6 +994,10 @@ function render(){
 /* ===== 홈 ===== */
 function kstToday(){const f=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());return Date.parse(f+'T00:00:00Z')}
 const todayStr=()=>new Date(kstToday()).toISOString().slice(0,10).replace(/-/g,'.');
+// 시즌 = 한 달 (시즌1 = 2026년 8월, 매달 1일 KST에 다음 시즌). 이름·기간은 날짜로 자동 계산
+const seasonNo=d=>{const[y,m]=String(d).split('-').map(Number);return Math.max(1,(y-2026)*12+m-7)||1};
+function autoMeta(){const d=new Date(kstToday()),y=d.getUTCFullYear(),m=d.getUTCMonth()+1,mm=String(m).padStart(2,'0'),last=new Date(Date.UTC(y,m,0)).getUTCDate();
+  return{name:'시즌'+seasonNo(`${y}-${mm}`),start:`${y}-${mm}-01`,end:`${y}-${mm}-${String(last).padStart(2,'0')}`}}
 function dday(){
   const st=Date.parse(S.meta.start+'T00:00:00Z'),en=Date.parse(S.meta.end+'T00:00:00Z'),td=kstToday();
   if(!Number.isFinite(st)||!Number.isFinite(en))return{t:'-',pct:0};
@@ -1035,64 +1039,29 @@ function distCard(){
       ${r.list.length?`<div class="dv-nm">${r.list.map(p=>esc(p.name)).join(' · ')}</div>`:''}</div>`).join('')}</div></div>`;
 }
 function renderHome(){
-  const act=S.players.filter(p=>p.active),n=act.length,T=S.teams.length;
-  const avg=n?act.reduce((a,p)=>a+totalBase(p),0)/n:0;
-  const dd=dday(),st=stats(),g=grade(st);
-  const vals=S.players.map(totalBase),maxB=Math.max(10,...vals),minB=Math.min(1,...vals);
-  const dist=[];for(let v=maxB;v>=minB;v--)dist.push({v,list:S.players.filter(p=>totalBase(p)===v)});
-  const mx=Math.max(1,...dist.map(d=>d.list.length));
-  const sup=POS.map(P=>({P,first:act.filter(p=>p.pos[0]===P.k).length,any:act.filter(p=>p.pos.includes(P.k)).length}));
-  const none=act.filter(p=>!p.pos.length).length,supMax=Math.max(T,...sup.map(s=>s.any),1);
-  const top=[...act].sort((a,b)=>totalBase(b)-totalBase(a)).slice(0,5);
+  const dd=dday();
   V.innerHTML=`
   <section class="hero ${VID.meta||canEdit()?'has-vid':''}">
     <div class="logo-wrap"><img src="${LOGO}" alt="롤가다 로고"></div>
     <div>
       <div class="eyebrow">리그 오브 레전드 내전 모임</div>
       <h1>롤가다</h1>
-      <div class="lead">${esc(S.meta.name)} 내전 · 팀대항전 커맨드센터 ⚔️<br><span class="sub">공정한 팀, 매너 있는 협곡, 같이 크는 실력 — 이게 우리 바이브 ✨</span></div>
+      <div class="lead">협곡에 인생 건 롤대남들 ⚔️<br><span class="sub">공정한 팀, 매너 있는 협곡, 같이 크는 실력 — 이게 우리 바이브 ✨</span></div>
       <div class="pills">
-        <span class="pill">📅 ${fmtD(S.meta.start)} ~ ${fmtD(S.meta.end).slice(5)}</span>
+        <span class="pill">🗓️ ${esc(S.meta.name)} · ${fmtD(S.meta.start)} ~ ${fmtD(S.meta.end).slice(5)}</span>
         <span class="pill" style="color:var(--pink)">⏳ ${dd.t}</span>
-        <span class="pill" style="color:var(--gold2)">🎯 팀 캡 ${S.cap}점</span>
       </div>
       <div class="row gap wrapr hero-btns">
-        <button class="btn pri" data-a="tab" data-v="build">⚡ 팀 짜러 가기</button>
+        <button class="btn pri" data-a="tab" data-v="records">📤 결과 올리기</button>
+        <button class="btn" data-a="tab" data-v="stats">📊 통계</button>
         <button class="btn" data-a="tab" data-v="draft">🎲 팀 뽑기</button>
-        <button class="btn" data-a="tab" data-v="sheet">📋 명단표</button>
         <button class="btn" data-a="tab" data-v="rules">📢 공지</button>
       </div>
-      ${(()=>{const mp=matchProgress();return`<div class="dbar" title="대진·순위의 전체 경기 중 결과가 나온 경기 비율"><i style="width:${mp.pct}%"></i></div>
-      <div class="sub" style="margin-top:4px">🏆 대진 진행률 ${mp.tot?`<b style="color:var(--txt)">${mp.done}/${mp.tot}경기</b> 완료 · ${mp.pct}%`:'· 대진표가 아직 없어요 (대진·순위 탭에서 생성)'}</div>`})()}
     </div>
     ${VID.meta?'<div class="hvslot" id="hvSlot"></div>':canEdit()?`<div class="hvslot"><div class="hvid-ph">🎬 [⚙️ 설정 → 홈 메인 영상]에서<br>제목 + 영상을 올리면 여기에 자동 재생돼요<br><span class="sub">(운영진에게만 보이는 안내)</span></div></div>`:''}
   </section>
-  <div class="stats">
-    <div class="stat"><span class="e">👥</span><div class="k">등록 멤버</div><div class="v">${S.players.length}<small>명</small></div></div>
-    <div class="stat"><span class="e">✅</span><div class="k">이번 출전</div><div class="v">${n}<small>명 · ${Math.floor(n/5)}팀 가능</small></div></div>
-    <div class="stat"><span class="e">📈</span><div class="k">평균 기본점수</div><div class="v">${avg.toFixed(1)}<small>점</small></div></div>
-    <div class="stat"><span class="e">⚖️</span><div class="k">현재 편성 밸런스</div><div class="v" style="font-size:20px;padding-top:6px"><span class="tag ${g.c}" style="font-size:14px;padding:4px 10px">${g.g}</span></div></div>
-  </div>
-  <div class="home-grid">
-    ${recentCard()}
-    <div class="card">
-      <div class="h2">🧭 포지션 수급 현황</div>
-      <div class="supply">${sup.map(s=>`<div class="sup"><span>${s.P.e} ${s.P.n}</span>
-        <div class="track"><i class="any" style="width:${s.any/supMax*100}%"></i><i class="first" style="width:${s.first/supMax*100}%"></i><span class="need" style="left:${T/supMax*100}%"></span></div>
-        <em style="color:${s.first>=T?'var(--lime)':s.any>=T?'var(--amber)':'#ff8795'}">${s.first}/${T}${s.first>=T?' ✔':''}</em></div>`).join('')}</div>
-      <div class="sub" style="margin-top:10px">진한 막대 = 1지망 · 연한 막대 = 2지망 이상 포함 · 금색 선 = 필요 인원(팀 수)<br>${none?`❔ 지망 미정 <b style="color:var(--txt)">${none}명</b> — [멤버] 탭 🎯 포지션 설정에서 찍어주면 자동 밸런스가 더 똑똑해져요`:'모든 출전자 지망 등록 완료 👏'}</div>
-    </div>
-    <div class="card">
-      <div class="h2">🔥 기본점수 TOP 5</div>
-      <div class="toplist">${top.map((p,i)=>`<div class="trow"><span class="rk">${['🥇','🥈','🥉','4','5'][i]}</span>${nmH(p)} <span style="font-size:13px">${adjIcons(p)}</span><span class="sc">${totalBase(p)}</span></div>`).join('')||'<div class="empty-note">출전자가 없어요</div>'}</div>
-    </div>
-    <div class="card">
-      <div class="h2">➕➖ 점수 조정 현황</div>
-      <div class="grid" style="gap:10px">${S.adjs.map(a=>{const ps=S.players.filter(p=>p.adj.includes(a.id));return`<div><div style="font-weight:900;margin-bottom:6px">${esc(a.e)} ${esc(a.n)} <span class="${vcls(a.v)}">${sgn(a.v)}</span> <span class="sub">· ${ps.length}명</span></div>
-        <div class="chips">${ps.map(p=>`<span class="chip on ${a.v<0?'adj neg':'adj'}">${nmH(p)}</span>`).join('')||'<span class="sub">아직 없음</span>'}</div></div>`}).join('')||'<span class="sub">조정 항목이 없어요 · [점수 기준]에서 추가</span>'}</div>
-      <div class="tipbox"><span style="font-size:22px">💡</span><span class="tt">${esc(TIPS[UI.tip])}</span><button class="btn sm" data-a="tip">다음 🔄</button></div>
-    </div>
-  </div>
+  ${typeof gHomeHTML==='function'?gHomeHTML():''}
+  ${typeof mSupplyHTML==='function'?mSupplyHTML():''}
   <div class="foot">${esc(S.meta.name)} · 매너 있는 협곡 만들기 🫶 · 데이터는 ${L.sync&&UI.sync==='live'?'실시간 공유 서버':'이 브라우저'}에 자동 저장</div>`;
 }
 
@@ -1907,9 +1876,7 @@ function renderSettings(){
       <div class="note">영상은 하나만 유지돼요 — 새로 올리면 이전 영상은 Firebase 저장소에서도 자동 삭제돼요. 어떤 비율의 영상이든 16:9로 맞춰 다시 만들어 올려요 (빈 곳은 흐린 배경). 소리는 있으면 그대로 들어가요. 5분 이하 · 결과 24MB 이하. 브라우저 정책상 소리 자동재생이 막히면 음소거로 시작하고 '소리 켜기' 버튼이 떠요.</div>
     </div>
     <div class="card"><div class="h2">🗓️ 시즌 정보</div>
-      <div class="setrow"><div class="lb">시즌 이름</div><input class="inp" style="width:140px" data-c="mname" value="${esc(S.meta.name)}" ${D}></div>
-      <div class="setrow"><div class="lb">시작일</div><input class="inp" type="date" data-c="mstart" value="${esc(S.meta.start)}" ${D}></div>
-      <div class="setrow"><div class="lb">종료일</div><input class="inp" type="date" data-c="mend" value="${esc(S.meta.end)}" ${D}></div>
+      <div class="setrow"><div class="lb">이번 시즌<small>매달 1일(한국 시간)에 자동으로 다음 시즌 · 시즌1 = 2026년 8월</small></div><b>${esc(S.meta.name)} · ${fmtD(S.meta.start)} ~ ${fmtD(S.meta.end)}</b></div>
     </div>
     ${canEdit()?`<div class="card"><div class="h2">🛡️ 운영 노트 <span class="tag t-violet">이 기기에만 저장</span></div>
       <div class="sub" style="margin-bottom:8px">경고는 개인 안내 사항이라 공유 서버에 올리지 않아요. 경고 3회 = 퇴출 · 5지망 숨김은 시즌당 3회</div>
