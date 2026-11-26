@@ -150,7 +150,8 @@ async function gApi(body) {
   if (d && d.limit != null) GM.quota = { used: d.used, limit: d.limit };
   return d;
 }
-const refreshQuota = () => gApi({ action: 'status' }).then(() => UI.tab === 'stats' && M.classList.contains('hidden') && render()).catch(() => {});
+const gTabOpen = () => ['stats', 'records'].includes(UI.tab) && M.classList.contains('hidden');
+const refreshQuota =() => gApi({ action: 'status' }).then(() => gTabOpen() && render()).catch(() => {});
 
 /* ---------- Firestore ---------- */
 const gCol = name => fb.fs.collection(fb.db, FB_DOC_G[0], FB_DOC_G[1], name);
@@ -160,11 +161,11 @@ function startGamesSync() {
   const { fs } = fb;
   GM.unsub.push(fs.onSnapshot(gCol('games'), snap => {
     GM.games = snap.docs.map(d => normGame({ ...d.data(), id: d.id })).filter(Boolean).sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
-    GM.got = true; if (UI.tab === 'stats' && M.classList.contains('hidden')) render();
+    GM.got = true; if (gTabOpen()) render();
   }, e => console.error('games sync', e)));
   GM.unsub.push(fs.onSnapshot(gCol('ids'), snap => {
     const ids = {}; snap.docs.forEach(d => { const v = d.data(); if (v && v.name) ids[nkey(v.name)] = { name: String(v.name), mid: v.mid === 'guest' ? 'guest' : Number(v.mid) } });
-    GM.ids = ids; if (UI.tab === 'stats' && M.classList.contains('hidden')) render();
+    GM.ids = ids; if (gTabOpen()) render();
   }, e => console.error('ids sync', e)));
 }
 function stopGamesSync() { GM.unsub.forEach(u => { try { u() } catch (_) {} }); GM.unsub = [] }
@@ -347,29 +348,48 @@ function renderStats() {
     <td><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${Math.round(s.wr * 100)}%</b></td><td><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b></td>
     <td>${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}</td><td>${Math.round(s.cs / s.n)}</td><td>${Math.round(s.gold / s.n).toLocaleString()}</td><td class="g-mosts">${mostH(s)}</td></tr>` };
   const th = c => `<th class="g-sort ${GM.sort === c.k ? 'on' : ''}" data-a="gsort" data-v="${c.k}">${c.h}${GM.sort === c.k ? (GM.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
-  V.innerHTML = `
-  <div class="sec-head"><div><div class="h1">📊 내전 통계</div>
-    <div class="sub">경기 종료 후 [점수판] 화면을 캡처해서 올리면 자동으로 집계돼요 · 누구나 올릴 수 있고, 저장된 기록 수정은 운영진만 · 이 화면에서 <b style="color:var(--txt)">Ctrl+V</b>로 바로 붙여넣기 가능</div></div>
-    <div class="row gap wrapr">${q && !q.pending ? `<span class="tag ${q.used >= q.limit ? 't-red' : 't-mut'}">오늘 ${q.used} / ${q.limit}장</span>` : ''}<button class="btn pri" data-a="gup" ${connected ? '' : 'disabled'}>📤 결과 올리기</button></div></div>
-  <div class="card toolbar"><div class="g-seg">${[['all', '전체'], ['casual', G_TYPES.casual], ['team', G_TYPES.team]].map(([k, n]) => `<button class="chip ${GM.filter === k ? 'on' : ''}" data-a="gfilter" data-v="${k}">${n}</button>`).join('')}</div>
-    <div class="g-seg mla">${[['rank', '🏅 랭킹'], ['games', '🗂 경기 목록']].map(([k, n]) => `<button class="chip ${GM.view === k ? 'on' : ''}" data-a="gview" data-v="${k}">${n}</button>`).join('')}</div></div>
+  V.innerHTML = `${gHeadHTML('📊 내전 통계', '경기 종료 후 [점수판] 화면을 캡처해서 올리면 자동으로 집계돼요')}
   ${!connected ? `<div class="empty-note card">🔌 서버에 연결되면 통계가 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>`
-    : GM.view === 'rank' ? `
+    : `
   <div class="card"><div class="h2">🏅 랭킹 <span class="sub">${games.length}경기 · ${need ? `최소 ${need}판 이상 참여해야 순위 노출` : '참여한 멤버 모두 노출'}</span></div>
     ${shown.length ? `<div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th>${G_COLS.map(th).join('')}<th>모스트</th></tr></thead><tbody>${shown.map((s, i) => rowH(s, i)).join('')}</tbody></table></div>`
       : `<div class="empty-note">${games.length ? '아직 순위 노출 조건을 채운 멤버가 없어요' : '📭 아직 올라온 경기가 없어요 · [📤 결과 올리기]로 시작해보세요'}</div>`}
     ${hidden.length ? `<details class="g-hidden"><summary>판수 부족으로 순위 미노출 ${hidden.length}명 (${need}판 미만)</summary><div class="g-scroll"><table class="g-tbl g-rank"><tbody>${hidden.map(s => rowH(s, null)).join('')}</tbody></table></div></details>` : ''}
     ${st.unknown.length || st.guests ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [게임 ID 연결]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
-  </div>` : gGamesHTML(games)}
+  </div>`}
   ${A && connected ? gAdminHTML() : ''}`;
-  if (!CHAMP.v) champLoad().then(() => UI.tab === 'stats' && M.classList.contains('hidden') && render()).catch(() => {});
+  gAfterRender();
+}
+// 통계·기록 탭 공통: 제목 + 오늘 사용량 + 올리기 버튼 + 종류 필터
+function gHeadHTML(title, sub) {
+  const q = GM.quota, connected = !!(fb && fb.fs);
+  return `<div class="sec-head"><div><div class="h1">${title}</div>
+    <div class="sub">${sub} · 누구나 올릴 수 있고, 저장된 기록 수정은 운영진만 · 이 화면에 <b style="color:var(--txt)">끌어다 놓거나 Ctrl+V</b>로도 올릴 수 있어요</div></div>
+    <div class="row gap wrapr">${q && !q.pending ? `<span class="tag ${q.used >= q.limit ? 't-red' : 't-mut'}">오늘 ${q.used} / ${q.limit}장</span>` : ''}<button class="btn pri" data-a="gup" ${connected ? '' : 'disabled'}>📤 결과 올리기</button></div></div>
+  <div class="card toolbar"><div class="g-seg">${[['all', '전체'], ['casual', G_TYPES.casual], ['team', G_TYPES.team]].map(([k, n]) => `<button class="chip ${GM.filter === k ? 'on' : ''}" data-a="gfilter" data-v="${k}">${n}</button>`).join('')}</div></div>`;
+}
+function gAfterRender() {
+  const connected = !!(fb && fb.fs);
+  if (!CHAMP.v) champLoad().then(() => gTabOpen() && render()).catch(() => {});
   if (!GM.quota && connected) { GM.quota = { used: 0, limit: 0, pending: true }; refreshQuota() }
+}
+// 📜 내전 기록 탭: 올라온 경기 전체 + 예전 팀대항전 캡처
+function renderGameRecords() {
+  const games = GM.games.filter(g => GM.filter === 'all' || g.type === GM.filter), connected = !!(fb && fb.fs);
+  const cnt = k => GM.games.filter(g => g.type === k).length;
+  V.innerHTML = `${gHeadHTML('📜 내전 기록', `올라온 내전 결과 전체 · 일반 내전 ${cnt('casual')}판 · 팀대항전 ${cnt('team')}판 · 카드를 누르면 상세 결과와 원본 스크린샷`)}
+  ${!connected ? `<div class="empty-note card">🔌 서버에 연결되면 기록이 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>` : gGamesHTML(games)}
+  ${REC.items.length ? `<details class="card g-old"><summary>📁 예전 팀대항전 캡처 ${REC.items.length}장 <span class="sub">(통계 기능 이전에 올린 이미지)</span></summary>
+    <div class="rec-grid" style="margin-top:12px">${REC.items.map(x => `<div class="rec-card" data-a="recview" data-id="${esc(x.id)}"><div class="th2" style="background-image:url('${x.thumb}')"></div>
+      <div class="ti"><b>${esc(x.title)}</b><span>${esc(x.date)}</span></div></div>`).join('')}</div></details>` : ''}`;
+  gAfterRender();
 }
 function gGamesHTML(games) {
   if (!games.length) return `<div class="card empty-note" style="padding:40px 14px">📭 아직 올라온 경기가 없어요</div>`;
   return `<div class="g-games">${games.map(g => `<div class="card g-game" data-a="gview1" data-id="${esc(g.id)}">
     <div class="g-gh"><span class="tag ${g.type === 'team' ? 't-gold' : 't-teal'}">${G_TYPES[g.type]}</span><b>${esc(g.date)}</b><span class="sub">${esc(g.dur)}</span></div>
-    ${g.teams.map((t, ti) => `<div class="g-gt ${g.win === ti + 1 ? 'win' : 'lose'}"><span class="g-res">${g.win === ti + 1 ? '승' : '패'}</span>${t.players.map(p => `<img src="${champImg(p.champ)}" alt="" title="${esc(champName(p.champ))} · ${esc(p.rid)}">`).join('')}<span class="sub">${t.k}/${t.d}/${t.a}</span></div>`).join('')}
+    ${g.teams.map((t, ti) => `<div class="g-gt ${g.win === ti + 1 ? 'win' : 'lose'}"><span class="g-res">${g.win === ti + 1 ? '승' : '패'}</span>${t.players.map(p => `<img src="${champImg(p.champ)}" alt="" title="${esc(champName(p.champ))} · ${esc(p.rid)}">`).join('')}<span class="sub">${t.k}/${t.d}/${t.a}</span></div>
+      <div class="g-gn">${t.players.map(p => { const m = memberOf(p.rid); return esc(m === 'guest' || m == null ? p.rid : player(m).name) }).join(' · ')}</div>`).join('')}
   </div>`).join('')}</div>`;
 }
 async function gViewGame(id) {
@@ -433,9 +453,22 @@ const gFileIn = Object.assign(document.createElement('input'), { type: 'file', a
 document.body.append(gFileIn);
 gFileIn.addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) gOpenUpload(fs) });
 document.addEventListener('paste', e => {
-  if (UI.tab !== 'stats' || !M.classList.contains('hidden')) return;
+  if (!gTabOpen()) return;
   const fs = [...(e.clipboardData?.items || [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
   if (fs.length) { e.preventDefault(); gOpenUpload(fs) }
+});
+// 통계·기록 탭에 이미지 파일을 끌어다 놓으면 바로 올리기
+const gDropCover = Object.assign(document.createElement('div'), { className: 'g-drop', innerHTML: '<div>📤 여기에 놓으면 결과창을 올려요</div>' });
+document.body.append(gDropCover);
+let gDragDepth = 0;
+const gHasFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+document.addEventListener('dragenter', e => { if (gTabOpen() && gHasFiles(e)) { gDragDepth++; gDropCover.classList.add('on') } });
+document.addEventListener('dragleave', e => { if (gHasFiles(e) && --gDragDepth <= 0) { gDragDepth = 0; gDropCover.classList.remove('on') } });
+document.addEventListener('dragover', e => { if (gTabOpen() && gHasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' } });
+document.addEventListener('drop', e => {
+  gDragDepth = 0; gDropCover.classList.remove('on');
+  if (!gTabOpen() || !gHasFiles(e)) return;
+  e.preventDefault(); gOpenUpload(e.dataTransfer.files);
 });
 const gBusy = () => !!GUP?.busy || GUP?.step === 'read';
 const gOnClose = () => { GUP = null };
@@ -479,6 +512,10 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .g-gt{display:flex;gap:4px;align-items:center;margin-top:4px}.g-gt img{width:26px;height:26px;border-radius:50%}
 .g-gt.lose img{opacity:.55;filter:grayscale(.5)}
 .g-res{font-weight:900;width:20px;font-size:12px}.g-gt.win .g-res{color:var(--teal2)}.g-gt.lose .g-res{color:var(--red)}
+.g-gn{font-size:11px;color:var(--mut);margin:1px 0 4px 24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-old{margin-top:14px}.g-old summary{cursor:pointer;font-weight:800}
+.g-drop{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(5,10,20,.78);border:3px dashed var(--teal);pointer-events:none}
+.g-drop.on{display:flex}.g-drop div{font-size:22px;font-weight:900;color:var(--teal2)}
 .g-ids{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
 .g-idrow{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line2);border-radius:10px}
 .g-idrow b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.g-idrow.unk{border-color:rgba(255,194,77,.4)}.g-idrow select{width:120px}

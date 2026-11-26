@@ -961,8 +961,8 @@ function balanceCore(teams,pool,cap,W){
 
 /* ---------- 렌더 ---------- */
 const TABS=[
-  {k:'home',n:'🏠 홈'},{k:'stats',n:'📊 내전 통계'},{k:'roster',n:'👥 멤버'},{k:'sheet',n:'📋 명단표'},{k:'build',n:'⚔️ 팀 빌더'},{k:'casual',n:'🎮 일반내전'},
-  {k:'bracket',n:'🏆 대진·순위'},{k:'records',n:'📸 팀대항전 기록'},{k:'cfg',n:'🧮 점수 기준'},{k:'rules',n:'📜 룰북'},{k:'settings',n:'⚙️ 설정'}
+  {k:'home',n:'🏠 홈'},{k:'stats',n:'📊 내전 통계'},{k:'roster',n:'👥 멤버'},{k:'sheet',n:'📋 명단표'},{k:'build',n:'⚔️ 팀 빌더'},{k:'casual',n:'🎮 일반내전'},{k:'draft',n:'🎲 팀 뽑기'},
+  {k:'records',n:'📜 내전 기록'},{k:'bracket',n:'🏆 대진·순위'},{k:'cfg',n:'🧮 점수 기준'},{k:'rules',n:'📜 룰북'},{k:'settings',n:'⚙️ 설정'}
 ];
 const V=$('#view');
 function renderHeader(){
@@ -976,13 +976,13 @@ function renderHeader(){
     <button class="pill" data-a="tab" data-v="settings" title="저장 방식"><span class="dot ${dotC}"></span><span class="lbtxt">${txt}</span></button>
     ${isAdmin()?`<button class="pill" data-a="lockadmin" style="color:var(--gold2)" title="로그아웃">🛠 <span class="lbtxt">운영진</span></button>`
       :`<button class="pill" data-a="unlock" style="color:var(--amber)">🔐 <span class="lbtxt">운영진 로그인</span></button>`}`;
-  const rb=$('#robar'),showRB=!isAdmin()&&!['home','sheet','casual','records','stats'].includes(UI.tab);
+  const rb=$('#robar'),showRB=!isAdmin()&&!['home','sheet','casual','records','stats','draft'].includes(UI.tab);
   rb.classList.toggle('hidden',!showRB);
   if(showRB)rb.innerHTML=`<div>👀 보기 전용 모드 · ${S.pinHash?'수정하려면 운영진 PIN을 입력하세요':'아직 운영진 PIN이 없어요 — 먼저 만들어주세요'} <span class="sub">(🎮 일반내전은 누구나 조작 가능)</span><button class="btn sm gold" data-a="unlock">${S.pinHash?'🔐 PIN 입력':'🔐 PIN 만들기'}</button></div>`;
 }
 function render(){
   renderHeader();
-  ({home:()=>{renderHome();mountVideo()},stats:()=>renderStats(),records:renderRecords,roster:renderRoster,sheet:renderSheet,casual:renderCasual,build:renderBuild,bracket:renderBracket,cfg:renderCfg,rules:renderRules,settings:renderSettings})[UI.tab]();
+  ({home:()=>{renderHome();mountVideo()},stats:()=>renderStats(),records:()=>renderGameRecords(),draft:()=>renderDraft(),roster:renderRoster,sheet:renderSheet,casual:renderCasual,build:renderBuild,bracket:renderBracket,cfg:renderCfg,rules:renderRules,settings:renderSettings})[UI.tab]();
   if(UI.posM!=null&&!M.classList.contains('hidden'))posModal(UI.posM,false);
   POP=false;
 }
@@ -2237,6 +2237,7 @@ async function startSync(){
     const db=fsM.getFirestore(app),ref=fsM.doc(db,...FB_DOC);
     fb={ref,refC:fsM.doc(db,...FB_DOC_C),refB:fsM.doc(db,...FB_DOC_B),setDoc:fsM.setDoc,got:false,gotC:false,fs:fsM,db};
     if(typeof startGamesSync==='function')startGamesSync(); // 📊 내전 통계 (games.js)
+    if(typeof startDraftSync==='function')startDraftSync(); // 🎲 팀 뽑기 (draft.js)
     unsubV=fsM.onSnapshot(fsM.doc(db,...FB_DOC_V),snap=>{const d=snap.exists()?snap.data():null;
       VID.trash=Array.isArray(d?.trash)?d.trash.filter(k=>typeof k==='string'&&/^v[a-z0-9]+_\d+$/.test(k)):[];if(VID.trash.length)setTimeout(sweepVideoTrash,1500);
       VID.meta=d&&d.id&&d.n?{id:String(d.id),title:String(d.title||''),mime:String(d.mime||'video/mp4'),n:+d.n,size:+d.size||0,at:+d.at||0}:null;onVideoMeta();if(UI.tab==='settings'&&M.classList.contains('hidden'))render()},err=>console.error('video sync',err));
@@ -2264,7 +2265,7 @@ async function startSync(){
   }catch(e){console.error(e);const x=explain(e);fb=null;UI.sync='err';UI.syncErr=`${x.t} (${x.raw})`;render();toast('❌ 공유 연결 실패 — 설정 탭에서 진단해보세요','err')}
   finally{starting=false}
 }
-function stopSync(){if(typeof stopGamesSync==='function')stopGamesSync();try{unsub&&unsub()}catch(e){}try{unsubC&&unsubC()}catch(e){}try{unsubB&&unsubB()}catch(e){}try{unsubV&&unsubV()}catch(e){}try{unsubR&&unsubR()}catch(e){}unsub=null;unsubC=null;unsubB=null;unsubV=null;unsubR=null;fb=null;UI.sync='off';clearTimeout(watchdog)}
+function stopSync(){if(typeof stopGamesSync==='function')stopGamesSync();if(typeof stopDraftSync==='function')stopDraftSync();try{unsub&&unsub()}catch(e){}try{unsubC&&unsubC()}catch(e){}try{unsubB&&unsubB()}catch(e){}try{unsubV&&unsubV()}catch(e){}try{unsubR&&unsubR()}catch(e){}unsub=null;unsubC=null;unsubB=null;unsubV=null;unsubR=null;fb=null;UI.sync='off';clearTimeout(watchdog)}
 function queuePush(){if(!L.sync||!fb||!fb.got||!canEdit())return;clearTimeout(pushT);pushT=setTimeout(pushNow,500)}
 function queuePushC(){if(!L.sync||!fb||!fb.gotC)return;clearTimeout(pushTC);pushTC=setTimeout(pushCNow,400)}
 async function pushCNow(){if(!fb||!fb.refC)return;try{await fb.setDoc(fb.refC,{json:JSON.stringify(C),by:CLIENT,at:Date.now()})}catch(e){console.error(e);toast('일반내전 저장 실패 — 연결 확인','err')}}
@@ -2560,11 +2561,6 @@ $('#vidf').addEventListener('change',e=>{const f=e.target.files[0];e.target.valu
   tv.onerror=()=>URL.revokeObjectURL(tv.src);videoModal()});
 $('#recf').addEventListener('change',e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)openRecUpload(fs)});
 document.addEventListener('paste',e=>{
-  if(UI.tab!=='records'||!canEdit()||!M.classList.contains('hidden'))return;
-  const fs=[...(e.clipboardData?.items||[])].filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile());
-  if(fs.length){e.preventDefault();openRecUpload(fs)}
-});
-document.addEventListener('paste',e=>{
   if(UI.tab!=='sheet'||!canEdit()||!M.classList.contains('hidden'))return;
   const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));
   if(it){e.preventDefault();handleBoardFile(it.getAsFile())}
@@ -2589,5 +2585,6 @@ render();
 if(L.sync)startSync();
 </script>
 <script src="games.js"></script>
+<script src="draft.js"></script>
 </body>
 </html>
