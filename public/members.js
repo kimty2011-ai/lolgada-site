@@ -60,7 +60,7 @@ function mUnknownHTML(unk, A) {
       <td>${x.n}</td><td><b class="${x.w / x.n >= 0.5 ? 'g-up' : 'g-dn'}">${pct(x.w / x.n)}</b></td><td>${((x.k + x.a) / Math.max(1, x.d)).toFixed(2)}</td>
       <td class="g-mosts">${most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('')}</td>
       <td class="sub">${x.last}</td>
-      ${A ? `<td><div class="m-merge">${sg.map(s => `<button class="btn sm pri" data-a="gmerge" data-v="${esc(x.rid)}" data-id="${s.id}" title="이름 유사도 ${Math.round(s.sim * 100)}% · 같은 경기에 함께 나온 적 없음">→ ${esc(player(s.id).name)}</button>`).join('')}${memberSel(x.rid)}</div></td>` : ''}</tr>` }).join('');
+      ${A ? `<td><div class="m-merge">${sg.map(s => `<button class="btn sm pri" data-a="gmerge" data-v="${esc(x.rid)}" data-id="${s.id}" title="이름 유사도 ${Math.round(s.sim * 100)}% · 같은 경기에 함께 나온 적 없음">→ ${esc(player(s.id).name)}</button>`).join('')}${memberSel(x.rid)}<button class="btn sm gold" data-a="mnreg" data-v="${esc(x.rid)}" title="기존 멤버가 아니면 새 멤버로 등록">＋ 새 멤버로 등록</button></div></td>` : ''}</tr>` }).join('');
   // 이미 연결된 닉네임 (운영진: 연결 끊기)
   const byMember = new Map(); Object.values(GM.ids).forEach(v => { const k = String(v.mid); if (!byMember.has(k)) byMember.set(k, []); byMember.get(k).push(v.name) });
   return `<div class="card"><div class="h2">❔ 미등록 닉네임 <span class="sub">멤버로 연결 안 된 게임 닉네임 ${unk.length}개 · 이 기록은 통계·순위에서 빠져 있어요 · 멤버를 고르면 지난 기록까지 그 멤버로 바로 합산돼요</span></div>
@@ -93,11 +93,14 @@ async function mSave(el, field) {
   GM.roster = { ...(GM.roster || {}), [id]: cur }; render(); // 화면 먼저 바꾸고 저장
   try { await mWrite(id, cur) } catch (e) { console.error(e); toast('저장 실패 — 다시 시도해 주세요', 'err') }
 }
-function mNewModal() {
+// rid: 미등록 닉네임에서 바로 등록할 때 그 게임 닉네임 (저장 후 새 멤버에 연결)
+function mNewModal(rid = null) {
   if (!isAdmin()) { toast('운영진만 추가할 수 있어요', 'err'); return }
-  modal(`<div class="mh">➕ 멤버 추가</div>
+  MEM.newRid = rid;
+  modal(`<div class="mh">➕ ${rid ? '새 멤버로 등록' : '멤버 추가'}</div>
+    ${rid ? `<div class="sub">게임 닉네임 <b style="color:var(--txt)">${esc(rid)}</b>의 지난 기록이 새 멤버 통계로 바로 들어가요 · 멤버 이름은 바꿔도 돼요</div>` : ''}
     <div class="af">
-      <div><label class="fl">닉네임 *</label><input class="inp" style="width:100%" id="mnName" maxlength="20" placeholder="예) 말차" autocomplete="off"></div>
+      <div><label class="fl">닉네임 *</label><input class="inp" style="width:100%" id="mnName" maxlength="20" placeholder="예) 말차" autocomplete="off" value="${esc(rid || '')}"></div>
       <div class="row2"><div><label class="fl">티어</label>${mSel('id="mnTier"', '', M_TIERS, '티어 미정')}</div>
         <div><label class="fl">주라인</label>${mSel('id="mnMain"', '', M_LANES(), '미정')}</div>
         <div><label class="fl">부라인</label>${mSel('id="mnSub"', '', M_LANES(), '없음')}</div></div>
@@ -113,10 +116,11 @@ async function mNewSave() {
   let id = null;
   if (!commit(() => { const p = mkPlayer(S, { name }); id = p.id; S.players.push(p) })) return;
   closeModal(); toast(`✅ '${name}' 님 추가 완료! (총 ${S.players.length}명)`);
+  const rid = MEM.newRid; MEM.newRid = null; if (rid) await gSetLink(rid, String(id)); // 그 닉네임 기록을 새 멤버로
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
 }
 Object.assign(CHG, { mtier: el => mSave(el, 'tier'), mmain: el => mSave(el, 'main'), msub: el => mSave(el, 'sub') });
-Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: mNewModal, mnsave: mNewSave });
+Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: () => mNewModal(), mnreg: el => mNewModal(el.dataset.v), mnsave: mNewSave });
 Object.assign(INP, { mq: el => { MEM.q = el.value; const pos = el.selectionStart; render(); const n = $('[data-i="mq"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) {} } } });
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
