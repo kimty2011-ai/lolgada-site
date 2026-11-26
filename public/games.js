@@ -528,19 +528,44 @@ async function gViewGame(id) {
   body(null);
   try { const s = await fb.fs.getDoc(gDoc('shots', id)); if (!M.classList.contains('hidden')) body(s.exists() ? s.data().img : '') } catch (e) { console.error(e); body('') }
 }
+// 닉네임 합치기 추천: 같은 경기에 함께 나온 멤버는 제외하고, 이름(자모)이 비슷한 멤버를 고른다
+function gSuggest(rid) {
+  const conflict = new Set();
+  GM.games.forEach(g => { const ps = g.teams.flatMap(t => t.players); if (!ps.some(p => nkey(p.rid) === nkey(rid))) return; ps.forEach(p => { const m = memberOf(p.rid); if (m != null && m !== 'guest') conflict.add(m) }) });
+  const aliases = new Map(); Object.values(GM.ids).forEach(v => { if (v.mid !== 'guest') { if (!aliases.has(v.mid)) aliases.set(v.mid, []); aliases.get(v.mid).push(v.name) } });
+  const j = jamo(rid);
+  return S.players.filter(m => !conflict.has(m.id)).map(m => {
+    const names = [m.name, ...(aliases.get(m.id) || [])];
+    const sim = Math.max(...names.map(n => { const jn = jamo(n); return 1 - lev(j, jn) / Math.max(j.length, jn.length, 1) }));
+    return { id: m.id, sim };
+  }).filter(x => x.sim >= 0.5).sort((a, b) => b.sim - a.sim).slice(0, 2);
+}
 function gAdminHTML() {
   const rids = new Map(); GM.games.forEach(g => g.teams.forEach(t => t.players.forEach(p => { if (!p.rid) return; const k = nkey(p.rid); if (!rids.has(k)) rids.set(k, { rid: p.rid, n: 0 }); rids.get(k).n++ })));
   Object.values(GM.ids).forEach(v => { const k = nkey(v.name); if (!rids.has(k)) rids.set(k, { rid: v.name, n: 0 }) });
-  const list = [...rids.values()].sort((a, b) => (memberOf(a.rid) == null ? 0 : 1) - (memberOf(b.rid) == null ? 0 : 1) || b.n - a.n);
+  const unknown = [...rids.values()].filter(x => !linkOf(x.rid)).sort((a, b) => b.n - a.n);
+  const byMember = new Map(); [...rids.values()].forEach(x => { const l = linkOf(x.rid); if (!l) return; const k = String(l.mid); if (!byMember.has(k)) byMember.set(k, []); byMember.get(k).push(x) });
+  const memberSel = (rid, cur) => `<select class="inp" data-c="glink" data-v="${esc(rid)}"><option value="">❔ unknown</option><option value="guest" ${cur === 'guest' ? 'selected' : ''}>🎟 게스트</option>
+    ${[...S.players].sort(nameSort).map(m => `<option value="${m.id}" ${cur === String(m.id) ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>`;
   const q = GM.quota;
-  return `<div class="card"><div class="h2">🛠 운영진 · 게임 ID 연결 <span class="sub">한 멤버에 부캐 여러 개 연결 가능 · 바꾸면 과거 기록까지 바로 반영</span></div>
-    ${list.length ? `<div class="g-ids">${list.map(x => { const l = linkOf(x.rid), cur = l ? String(l.mid) : '';
-      return `<div class="g-idrow ${cur ? '' : 'unk'}"><b>${esc(x.rid)}</b><span class="sub">${x.n}판</span>
-        <select class="inp" data-c="glink" data-v="${esc(x.rid)}"><option value="">❔ unknown</option><option value="guest" ${cur === 'guest' ? 'selected' : ''}>🎟 게스트</option>
-        ${[...S.players].sort(nameSort).map(m => `<option value="${m.id}" ${cur === String(m.id) ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>` }).join('')}</div>` : '<div class="empty-note">아직 게임 ID가 없어요</div>'}
+  return `<div class="card"><div class="h2">🔀 운영진 · 닉네임 합치기 <span class="sub">부캐·잘못 인식된 닉네임을 기존 멤버에 합치면 과거 기록까지 그 멤버 통계로 바로 합산돼요</span></div>
+    ${unknown.length ? `<div class="g-merge">${unknown.map(x => { const sg = gSuggest(x.rid);
+      return `<div class="g-mrow"><div class="g-mname"><b>${esc(x.rid)}</b><span class="sub">${x.n}판 · 멤버 연결 안 됨</span></div>
+        <div class="g-msug">${sg.map(s => `<button class="btn sm pri" data-a="gmerge" data-v="${esc(x.rid)}" data-id="${s.id}" title="이름 유사도 ${Math.round(s.sim * 100)}% · 같은 경기에 함께 나온 적 없음">→ ${esc(player(s.id).name)}에 합치기</button>`).join('') || '<span class="sub">비슷한 멤버 없음 · 직접 고르기 →</span>'}</div>
+        ${memberSel(x.rid, '')}</div>` }).join('')}</div>` : '<div class="empty-note">✅ 모든 닉네임이 멤버에 연결돼 있어요</div>'}
+    <details class="g-linked" style="margin-top:14px"><summary class="sub" style="cursor:pointer;font-weight:800">🔗 연결된 닉네임 보기 (멤버 ${byMember.size}명)</summary>
+      <div class="g-ids" style="margin-top:10px">${[...byMember.entries()].sort((a, b) => (a[0] === 'guest' ? 1 : 0) - (b[0] === 'guest' ? 1 : 0)).map(([mid, xs]) => `<div class="g-idgrp"><b>${mid === 'guest' ? '🎟 게스트' : esc(player(+mid)?.name || '?')}</b>
+        <div>${xs.map(x => `<span class="g-alias">${esc(x.rid)} <span class="sub">${x.n}판</span><button class="g-x" data-a="gunlink" data-v="${esc(x.rid)}" title="연결 끊기">✕</button></span>`).join('')}</div></div>`).join('')}</div></details>
     <div class="h2" style="margin-top:18px">📏 하루 업로드 한도 <span class="sub">한국 시간 자정에 초기화 · 운영진 업로드는 한도에서 빠져요</span></div>
     <div class="row gap"><input class="inp num" type="number" min="0" max="500" id="gLimit" value="${q && !q.pending ? q.limit : ''}" style="width:90px"><span>장 / 하루</span><button class="btn sm gold" data-a="glimit">저장</button>${q && !q.pending ? `<span class="sub">오늘 ${q.used}장 사용</span>` : ''}</div>
   </div>`;
+}
+async function gSetLink(rid, v) {
+  if (!isAdmin()) return toast(RO_MSG, 'err');
+  const ref = gDoc('ids', idDocId(nkey(rid)));
+  try { if (!v) await fb.fs.deleteDoc(ref); else await fb.fs.setDoc(ref, { name: rid, mid: v === 'guest' ? 'guest' : Number(v), at: Date.now() });
+    toast(v ? `🔀 '${rid}' → ${v === 'guest' ? '게스트' : player(+v)?.name} · 통계에 바로 합산돼요` : `🔗 '${rid}' 연결을 끊었어요`) }
+  catch (e) { console.error(e); toast('저장 실패 — ' + explain(e).t, 'err') }
 }
 
 /* ---------- 이벤트 ---------- */
@@ -576,9 +601,11 @@ Object.assign(CHG, {
   gwin: el => { if (!GUP?.draft) return; GUP.draft.win = +el.value; gRefreshChecks() },
   gdate: el => { if (!GUP?.draft) return; GUP.draft.date = el.value; gRefreshChecks() },
   gdur: el => { if (!GUP?.draft) return; GUP.draft.dur = el.value.trim(); gRefreshChecks() },
-  glink: async el => { if (!isAdmin()) return toast(RO_MSG, 'err'); const rid = el.dataset.v, v = el.value, ref = gDoc('ids', idDocId(nkey(rid)));
-    try { if (!v) await fb.fs.deleteDoc(ref); else await fb.fs.setDoc(ref, { name: rid, mid: v === 'guest' ? 'guest' : Number(v), at: Date.now() }); toast('🔗 연결을 바꿨어요 · 통계에 바로 반영돼요') }
-    catch (e) { console.error(e); toast('저장 실패 — ' + explain(e).t, 'err') } },
+  glink: el => gSetLink(el.dataset.v, el.value),
+});
+Object.assign(ACT, {
+  gmerge: el => gSetLink(el.dataset.v, el.dataset.id),
+  gunlink: el => { const rid = el.dataset.v; ask('🔗 연결 끊기', `'${esc(rid)}' 닉네임을 멤버에서 떼어낼까요? 이 닉네임으로 뛴 기록이 그 멤버 통계에서 빠지고 unknown이 돼요.`, () => gSetLink(rid, ''), '끊기') },
 });
 const gFileIn = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true, hidden: true, id: 'gamef' });
 document.body.append(gFileIn);
@@ -672,6 +699,13 @@ body.capture .subtabs{display:none}
 .g-old{margin-top:14px}.g-old summary{cursor:pointer;font-weight:800}
 .g-drop{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(5,10,20,.78);border:3px dashed var(--teal);pointer-events:none}
 .g-drop.on{display:flex}.g-drop div{font-size:22px;font-weight:900;color:var(--teal2)}
+.g-merge{display:flex;flex-direction:column;gap:8px}
+.g-mrow{display:grid;grid-template-columns:minmax(150px,1fr) auto 150px;gap:10px;align-items:center;padding:8px 12px;border:1px solid rgba(255,194,77,.35);border-radius:12px}
+@media (max-width:640px){.g-mrow{grid-template-columns:1fr}}
+.g-mname b{display:block}.g-msug{display:flex;gap:6px;flex-wrap:wrap}
+.g-idgrp{padding:8px 10px;border:1px solid var(--line2);border-radius:10px}.g-idgrp>b{display:block;margin-bottom:4px}
+.g-alias{display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;padding:2px 4px 2px 8px;border-radius:999px;background:var(--glass);font-size:12.5px}
+.g-x{border:0;background:none;color:var(--mut);cursor:pointer;font-size:11px;padding:0 4px}.g-x:hover{color:var(--red)}
 .g-ids{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
 .g-idrow{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line2);border-radius:10px}
 .g-idrow b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.g-idrow.unk{border-color:rgba(255,194,77,.4)}.g-idrow select{width:120px}
