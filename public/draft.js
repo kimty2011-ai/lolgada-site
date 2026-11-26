@@ -90,7 +90,10 @@ function renderDraft() {
 }
 // 팀 뽑기에서는 칭호·점수 없이 닉네임 + 티어 · 포지션만 보여준다
 const dName = p => `${esc(p.name)}${p.guest ? '<span class="gtag">GUEST</span>' : ''}`;
-const dInfo = p => `${esc(tierOf(p)?.n || '티어 미정')} · ${esc(posTxt(p))}`;
+// 👥 멤버 구성(일반 내전) 값이 있으면 그걸, 없으면 팀 대항전 멤버 정보를 쓴다
+const dInfo = p => { const r = p.guest || typeof rosterOf !== 'function' ? {} : rosterOf(p.id);
+  const t = MT[r.tier]?.n || tierOf(p)?.n || '티어 미정', ps = r.main ? [r.main, r.sub].filter(k => PK[k]).map(k => PK[k].e + PK[k].n).join(' ') : posTxt(p);
+  return `${esc(t)} · ${esc(ps)}` };
 function dPersonRow(p, on) { return `<button class="d-p ${on ? 'on' : ''}" data-a="din" data-id="${p.id}"><span class="d-ck">${on ? '✔' : ''}</span><span class="d-nm">${dName(p)}<span class="d-info">${dInfo(p)}</span></span></button>` }
 function dSetupList(d) {
   const inSet = new Set(d.in), q = DSYNC.q.trim().toLowerCase();

@@ -151,7 +151,7 @@ async function gApi(body) {
   if (d && d.limit != null) GM.quota = { used: d.used, limit: d.limit };
   return d;
 }
-const gTabOpen = () => ['stats', 'records'].includes(UI.tab) && M.classList.contains('hidden');
+const gTabOpen = () => ['stats', 'records', 'members'].includes(UI.tab) && M.classList.contains('hidden');
 const refreshQuota =() => gApi({ action: 'status' }).then(() => gTabOpen() && render()).catch(() => {});
 
 /* ---------- Firestore ---------- */
@@ -168,6 +168,11 @@ function startGamesSync() {
     const ids = {}; snap.docs.forEach(d => { const v = d.data(); if (v && v.name) ids[nkey(v.name)] = { name: String(v.name), mid: v.mid === 'guest' ? 'guest' : Number(v.mid) } });
     GM.ids = ids; if (gTabOpen()) render();
   }, e => console.error('ids sync', e)));
+  // 👥 멤버 구성: 일반 내전용 티어·주라인·부라인 (members.js)
+  GM.unsub.push(fs.onSnapshot(gCol('roster'), snap => {
+    const r = {}; snap.docs.forEach(d => { const v = d.data() || {}; r[Number(d.id)] = { tier: v.tier || '', main: v.main || '', sub: v.sub || '' } });
+    GM.roster = r; if (gTabOpen()) render();
+  }, e => console.error('roster sync', e)));
   // lol.ps 참고 승률 — 매일 오전 10시 netlify/functions/lps-daily.mjs가 갱신
   GM.unsub.push(fs.onSnapshot(fs.doc(fb.db, 'lolgadaCenter', G_DEV ? 'lps_tier_dev' : 'lps_tier'), d => {
     try { const v = JSON.parse(d.data()?.json || 'null'); if (v?.lanes) { G_LPS = v.lanes; G_LPS_PATCH = v.patch || G_LPS_PATCH; G_LPS_AT = v.at || 0; G_LPM = null; if (gTabOpen()) render() } } catch (_) {}
@@ -481,8 +486,8 @@ function renderStats() {
   const body = !connected ? `<div class="empty-note card">🔌 서버에 연결되면 통계가 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>`
     : !games.length ? `<div class="card empty-note" style="padding:40px 14px">📭 이 조건에 맞는 경기가 없어요</div>`
     : GM.view === 'players' ? gPlayersHTML(games, st, need) : GM.view === 'champs' ? gChampsHTML(games, st) : gRankHTML(games, st, need, w, pos);
-  V.innerHTML = `<div class="sec-head"><div><div class="h1">📊 내전 통계</div>
-    <div class="sub">📜 내전 기록 탭에 올라온 경기로 자동 집계 · 통계는 1판만 뛰어도 들어가고, <b style="color:var(--txt)">순위는 최소 판수를 채운 멤버만</b> 매겨져요</div></div>
+  V.innerHTML = `<div class="sec-head"><div><div class="h1">📊 통계</div>
+    <div class="sub">📜 기록 탭에 올라온 경기로 자동 집계 · 통계는 1판만 뛰어도 들어가고, <b style="color:var(--txt)">순위는 최소 판수를 채운 멤버만</b> 매겨져요</div></div>
     <button class="btn" data-a="tab" data-v="records">📤 결과 올리러 가기</button></div>
   <div class="g-vtabs">${tabs.map(([k, n]) => `<button class="${(GM.view === k || (k === 'rank' && !['players', 'champs'].includes(GM.view))) ? 'on' : ''}" data-a="gview" data-v="${k}">${n}</button>`).join('')}</div>
   ${gStatFilterHTML()}
@@ -713,7 +718,7 @@ function renderGameRecords() {
   const rs = gRSeason(), inSeason = GM.games.filter(g => rs === 'all' || g.season === rs);
   const games = inSeason.filter(g => GM.rf === 'all' || g.type === GM.rf), connected = !!(fb && fb.fs);
   const cnt = k => inSeason.filter(g => g.type === k).length;
-  V.innerHTML = `${gHeadHTML('📜 내전 기록', `${seasonName(rs)} · 일반 내전 ${cnt('casual')}판 · 팀대항전 ${cnt('team')}판 · 카드를 누르면 상세 결과와 원본 스크린샷`)}
+  V.innerHTML = `${gHeadHTML('📜 기록', `${seasonName(rs)} · 일반 내전 ${cnt('casual')}판 · 팀대항전 ${cnt('team')}판 · 카드를 누르면 상세 결과와 원본 스크린샷`)}
   ${!connected ? `<div class="empty-note card">🔌 서버에 연결되면 기록이 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>` : gGamesHTML(games)}
   ${REC.items.length ? `<details class="card g-old"><summary>📁 예전 팀대항전 캡처 ${REC.items.length}장 <span class="sub">(통계 기능 이전에 올린 이미지)</span></summary>
     <div class="rec-grid" style="margin-top:12px">${REC.items.map(x => `<div class="rec-card" data-a="recview" data-id="${esc(x.id)}"><div class="th2" style="background-image:url('${x.thumb}')"></div>
