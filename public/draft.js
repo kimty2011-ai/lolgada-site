@@ -88,7 +88,10 @@ function renderDraft() {
   ${({ setup: dSetupHTML, ladder: dLadderHTML, order: dOrderHTML, pick: dPickHTML, rps: dRpsHTML, done: dDoneHTML })[d.phase](d)}`;
   if (d.phase === 'ladder') dAnimateLadder();
 }
-function dPersonRow(p, on, extra = '') { return `<button class="d-p ${on ? 'on' : ''}" data-a="din" data-id="${p.id}"><span class="d-ck">${on ? '✔' : ''}</span><span class="d-nm">${nmH(p)}${p.guest ? '<span class="gtag">GUEST</span>' : ''}</span><span class="sub">${totalBase(p)}점</span>${extra}</button>` }
+// 팀 뽑기에서는 칭호·점수 없이 닉네임 + 티어 · 포지션만 보여준다
+const dName = p => `${esc(p.name)}${p.guest ? '<span class="gtag">GUEST</span>' : ''}`;
+const dInfo = p => `${esc(tierOf(p)?.n || '티어 미정')} · ${esc(posTxt(p))}`;
+function dPersonRow(p, on) { return `<button class="d-p ${on ? 'on' : ''}" data-a="din" data-id="${p.id}"><span class="d-ck">${on ? '✔' : ''}</span><span class="d-nm">${dName(p)}<span class="d-info">${dInfo(p)}</span></span></button>` }
 function dSetupList(d) {
   const inSet = new Set(d.in), q = DSYNC.q.trim().toLowerCase();
   const all = [...S.players, ...C.guests].filter(p => !q || p.name.toLowerCase().includes(q)).sort((a, b) => (inSet.has(b.id) - inSet.has(a.id)) || nameSort(a, b));
@@ -137,8 +140,7 @@ function dAnimateLadder() {
 function dTeamCol(d, t, turn) {
   const size = dTeamSize(d), mem = d.teams[t];
   return `<div class="card d-team t${t} ${turn === t ? 'turn' : ''}"><div class="d-th">${sideIcon(d, t)} <b>${esc(teamName(d, t))}</b><span class="sub">${t ? '후픽' : '선픽'} · ${mem.length}/${size}</span></div>
-    ${Array.from({ length: size }, (_, i) => { const p = cPerson(mem[i]); return `<div class="d-slot ${p ? '' : 'emp'}">${i === 0 ? '👑 ' : `${i + 1}. `}${p ? `${nmH(p)} <span class="sub">${totalBase(p)}점</span>` : '<span class="sub">—</span>'}</div>` }).join('')}
-    <div class="d-sum sub">팀 점수 합 ${mem.reduce((s, id) => s + (cPerson(id) ? totalBase(cPerson(id)) : 0), 0)}</div></div>`;
+    ${Array.from({ length: size }, (_, i) => { const p = cPerson(mem[i]); return `<div class="d-slot ${p ? '' : 'emp'}">${i === 0 ? '👑 ' : `${i + 1}. `}${p ? `${dName(p)} <span class="d-info">${dInfo(p)}</span>` : '<span class="sub">—</span>'}</div>` }).join('')}</div>`;
 }
 function dPickHTML(d) {
   const turn = dTurn(d), o = dOrder(d), pool = dPool(d);
@@ -148,7 +150,7 @@ function dPickHTML(d) {
     <div class="d-teams">${dTeamCol(d, 0, turn)}${dTeamCol(d, 1, turn)}</div>
     <div class="card"><div class="h2">🙋 남은 참가자 <span class="tag t-mut">${pool.length}명</span>
       <span class="mla row gap">${d.picks.length ? '<button class="btn sm" data-a="dundo">↩ 한 명 되돌리기</button>' : ''}${turn < 0 ? '<button class="btn sm pri" data-a="dtorps">✊ 진영 선택권 정하기</button>' : ''}</span></div>
-      <div class="d-plist">${pool.map(id => { const p = cPerson(id); return `<button class="d-p" data-a="dpick" data-id="${p.id}" ${turn < 0 ? 'disabled' : ''}><span class="d-nm">${nmH(p)}${p.guest ? '<span class="gtag">GUEST</span>' : ''}</span><span class="sub">${totalBase(p)}점 · ${esc(posTxt(p))}</span></button>` }).join('') || '<div class="empty-note">모두 뽑혔어요</div>'}</div>
+      <div class="d-plist">${pool.map(id => { const p = cPerson(id); return `<button class="d-p" data-a="dpick" data-id="${p.id}" ${turn < 0 ? 'disabled' : ''}><span class="d-nm">${dName(p)}<span class="d-info">${dInfo(p)}</span></span></button>` }).join('') || '<div class="empty-note">모두 뽑혔어요</div>'}</div>
       ${turn < 0 && pool.length ? `<div class="sub" style="margin-top:8px">⏸ 대기 ${pool.length}명 — 이번 판은 쉬어요</div>` : ''}</div>`;
 }
 function dRpsHTML(d) {
@@ -180,10 +182,8 @@ function rpsPlay(r, t, v) { // 반영했으면 true
 }
 // ③ 선후픽: 선택권을 누구에게 줄지 → (1-2-2-2-1이면) 선픽 1명 / 후픽 2명 고르기
 function dOrderHTML(d) {
-  const o = d.order, capP = t => cPerson(d.caps[t]), cap = t => esc(capP(t)?.name || '?'), sc = t => capP(t) ? totalBase(capP(t)) : 0;
-  const diff = Math.abs(sc(0) - sc(1)), low = sc(0) < sc(1) ? 0 : 1;
-  const caps = `<div class="d-capres">${[0, 1].map(t => `<div class="d-cap k${t} ${o.holder === t ? 'hold' : ''}">👑 팀장<b>${cap(t)}</b>${sc(t)}점${o.holder === t ? '<br>🎫 선택권' : ''}</div>`).join('')}</div>
-    <div class="sub" style="text-align:center;margin-top:6px">팀장 점수 차 ${diff}점${diff ? ` · ${cap(low)} 쪽이 낮아요` : ' · 동밸런스'}</div>`;
+  const o = d.order, capP = t => cPerson(d.caps[t]), cap = t => esc(capP(t)?.name || '?'), info = t => capP(t) ? dInfo(capP(t)) : '';
+  const caps = `<div class="d-capres">${[0, 1].map(t => `<div class="d-cap k${t} ${o.holder === t ? 'hold' : ''}">👑 팀장<b>${cap(t)}</b>${info(t)}${o.holder === t ? '<br>🎫 선택권' : ''}</div>`).join('')}</div>`;
   const how = { random: '🎲 랜덤', rps: '✊ 가위바위보 승리', manual: '👆 직접 지정' }[o.method] || '';
   let body;
   if (o.holder >= 0) {
@@ -196,14 +196,14 @@ function dOrderHTML(d) {
     body += `<div class="row" style="justify-content:center;margin-top:10px"><button class="btn sm" data-a="dohow" data-v="">↩ 선택권 다시 정하기</button></div>`;
   } else if (o.method === 'rps') {
     body = `<div class="sub" style="text-align:center;margin-bottom:8px">이긴 팀장이 선후픽 선택권 · 각자 자기 칸에서 몰래 내기${o.rps.ties ? ` · 비김 ${o.rps.ties}번` : ''}</div>
-      ${dRpsBoard(o.rps, 'dorps', cap, t => sc(t) + '점')}
+      ${dRpsBoard(o.rps, 'dorps', cap, info)}
       <div class="row" style="justify-content:center;margin-top:10px"><button class="btn sm" data-a="dohow" data-v="">↩ 다른 방법</button></div>`;
   } else if (o.method === 'manual') {
     body = `<div class="sub" style="text-align:center;margin-bottom:8px">밸런스가 안 맞을 때 · 선택권을 줄 팀장을 고르세요</div>
-      <div class="d-choose">${[0, 1].map(t => `<button class="btn" data-a="doholder" data-v="${t}"><b>${cap(t)}</b><span>${sc(t)}점${diff && t === low ? ' · 점수 낮음' : ''}</span></button>`).join('')}</div>
+      <div class="d-choose">${[0, 1].map(t => `<button class="btn" data-a="doholder" data-v="${t}"><b>${cap(t)}</b><span>${info(t)}</span></button>`).join('')}</div>
       <div class="row" style="justify-content:center;margin-top:10px"><button class="btn sm" data-a="dohow" data-v="">↩ 다른 방법</button></div>`;
   } else {
-    body = `<div class="sub" style="text-align:center;margin-bottom:8px">선후픽 선택권을 어떻게 정할까요? ${diff ? '(점수 차가 크면 낮은 쪽에 직접 주는 것도 방법)' : '(동밸런스면 가위바위보 추천)'}</div>
+    body = `<div class="sub" style="text-align:center;margin-bottom:8px">선후픽 선택권을 어떻게 정할까요? (동밸런스면 가위바위보, 밸런스가 안 맞으면 직접 지정)</div>
       <div class="d-choose"><button class="btn" data-a="dohow" data-v="random"><b>🎲 랜덤</b><span>바로 정하기</span></button><button class="btn" data-a="dohow" data-v="rps"><b>✊ 가위바위보</b><span>동밸런스일 때</span></button><button class="btn" data-a="dohow" data-v="manual"><b>👆 직접 지정</b><span>밸런스 안 맞을 때</span></button></div>`;
   }
   return `<div class="card d-rps"><div class="h2">🎫 선후픽 정하기 <span class="sub">${d.mode === 'one' ? '1명씩 방식 · 선택권 = 선픽' : '1-2-2-2-1 방식 · 선택권을 얻으면 선픽 1명 / 후픽 2명 중 선택'}</span></div>${caps}<div style="margin-top:14px">${body}</div></div>`;
@@ -258,7 +258,7 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .d-plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}
 .d-p{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:12px;border:1px solid var(--line2);background:var(--panel2);text-align:left;flex-wrap:wrap}
 .d-p.on{border-color:var(--teal);background:rgba(10,200,185,.1)}.d-p:disabled{opacity:.5}
-.d-p .d-nm{flex:1;min-width:0;font-weight:800}.d-ck{width:18px;height:18px;border-radius:6px;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:var(--teal2)}
+.d-p .d-nm{flex:1;min-width:0;font-weight:800}.d-info{display:block;font-size:11.5px;font-weight:600;color:var(--mut);margin-top:2px}.d-slot .d-info{display:inline;margin-left:6px}.d-ck{width:18px;height:18px;border-radius:6px;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:var(--teal2)}
 .d-ladder{overflow-x:auto;text-align:center}.d-ladder svg{width:100%;height:auto}
 .d-rail{stroke:var(--mut2);stroke-width:3}.d-rung{stroke:var(--mut);stroke-width:3}
 .d-path{fill:none;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.d-path.k0{stroke:var(--teal2)}.d-path.k1{stroke:var(--pink)}
