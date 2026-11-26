@@ -123,6 +123,16 @@ select.inp option{background:#0b1424}
 .stat .v small{font-size:14px;color:var(--mut);font-weight:800;margin-left:3px}
 .stat .e{position:absolute;right:12px;top:10px;font-size:26px;opacity:.85}
 .home-grid{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}
+.stats.h-stats{grid-template-columns:repeat(4,1fr);gap:14px;margin:14px 0}
+.h-stats+.card{margin-bottom:14px}
+.h-stats~.home-grid{grid-template-columns:1fr 1fr}
+.h-stats~.home-grid>.card:last-child:nth-child(odd){grid-column:1/-1}
+.h-stats~.home-grid .h-aw{grid-template-columns:1fr 1fr}
+.h-stats~.home-grid .h-aw>.g-award:last-child:nth-child(odd){grid-column:1/-1}
+.h-stats .stat{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:4px}
+.h-stats .stat .e{position:static;font-size:24px}
+.h-stats .stat .v{height:40px;display:flex;align-items:center;justify-content:center}
+.h-stats .stat .v.t{font-size:22px}
 .bars{display:flex;align-items:flex-end;gap:8px;height:170px;padding-top:18px}
 .bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;min-width:0}
 .bar .col{width:100%;max-width:46px;border-radius:10px 10px 4px 4px;background:linear-gradient(180deg,var(--teal2),rgba(10,200,185,.25));position:relative;transition:height .6s cubic-bezier(.2,.8,.2,1);min-height:4px}
@@ -345,7 +355,7 @@ select.inp option{background:#0b1424}
 
 /* ===== responsive ===== */
 @media(max-width:980px){
-  .home-grid,.rules,.sets{grid-template-columns:1fr}
+  .home-grid,.h-stats~.home-grid,.rules,.sets{grid-template-columns:1fr}
   .summary{grid-template-columns:repeat(3,1fr)}
   .build{grid-template-columns:1fr}
   .bench{position:static;max-height:none}
@@ -364,7 +374,7 @@ select.inp option{background:#0b1424}
   .h1{font-size:21px}
   .steps,.awards{grid-template-columns:1fr}
   .ladder{grid-template-columns:1fr 1fr 1fr}
-  .stats{grid-template-columns:1fr 1fr}
+  .stats,.stats.h-stats{grid-template-columns:1fr 1fr}
   .stat .v{font-size:26px}
 }
 
@@ -1059,7 +1069,6 @@ function renderHome(){
     ${VID.meta?'<div class="hvslot" id="hvSlot"></div>':canEdit()?`<div class="hvslot"><div class="hvid-ph">🎬 [⚙️ 설정 → 홈 메인 영상]에서<br>제목 + 영상을 올리면 여기에 자동 재생돼요<br><span class="sub">(운영진에게만 보이는 안내)</span></div></div>`:''}
   </section>
   ${typeof gHomeHTML==='function'?gHomeHTML():''}
-  ${typeof mSupplyHTML==='function'?mSupplyHTML():''}
   <div class="foot">${esc(S.meta.name)} · 매너 있는 협곡 만들기 🫶 · 데이터는 ${L.sync&&UI.sync==='live'?'실시간 공유 서버':'이 브라우저'}에 자동 저장</div>`;
 }
 

@@ -856,7 +856,7 @@ if (fb && fb.fs && !GM.unsub.length) startGamesSync();
 function gHomeHTML() {
   if (!GM.got) return `<div class="card empty-note">⏳ 내전 기록 불러오는 중…</div>`;
   const cs = curSeason(), games = GM.games.filter(g => g.season === cs && g.type === 'casual');
-  if (!games.length) return `<div class="card empty-note" style="padding:30px 14px">📭 ${seasonName(cs)} 일반 내전 기록이 아직 없어요<br><span class="sub">📜 기록 탭에서 결과 스크린샷을 올리면 여기에 하이라이트가 떠요</span></div>`;
+  if (!games.length) return `${typeof mSupplyHTML === 'function' ? mSupplyHTML() : ''}<div class="card empty-note" style="padding:30px 14px">📭 ${seasonName(cs)} 일반 내전 기록이 아직 없어요<br><span class="sub">📜 기록 탭에서 결과 스크린샷을 올리면 여기에 하이라이트가 떠요</span></div>`;
   const need = exposeNeed(games.length) || 0, st = gRanked(games, need, rankW()), nm = id => esc(player(id)?.name || '?');
   const aw = Object.fromEntries(gAwards(games, st, need).map(a => [a.n, a]));
   const awH = a => a ? `<div class="g-award"><div class="g-aw-e">${a.e}</div><div class="g-aw-b"><div class="g-aw-t">${a.n}</div><div class="g-aw-w">${a.who}</div><div class="g-aw-v">${a.val}${a.sub ? ` <span class="sub">· ${a.sub}</span>` : ''}</div></div></div>` : '';
@@ -872,12 +872,13 @@ function gHomeHTML() {
   const chH = (c, sub) => `<div class="g-smost"><img src="${champImg(c.id)}" alt=""><div><b>${esc(champName(c.id))}</b><span class="sub">${sub}</span></div>${tierBadge(tiers.get(c.id)?.tier ?? 5)}</div>`;
   const picked = [...st.champs].filter(c => c.id).sort((a, b) => b.n - a.n).slice(0, 3), best = [...st.champs].filter(c => c.id).sort((a, b) => (tiers.get(b.id)?.sc ?? -99) - (tiers.get(a.id)?.sc ?? -99)).slice(0, 3);
   const top1 = st.ranked[0];
-  return `<div class="stats">
+  return `<div class="stats h-stats">
     <div class="stat"><span class="e">🎮</span><div class="k">${seasonName(cs)} 내전</div><div class="v">${games.length}<small>판</small></div></div>
     <div class="stat"><span class="e">👥</span><div class="k">참가 멤버</div><div class="v">${st.rows.length}<small>명</small></div></div>
-    <div class="stat"><span class="e">📅</span><div class="k">마지막 내전</div><div class="v" style="font-size:20px;padding-top:6px">${last.slice(5).replace('-', '/')}</div></div>
-    <div class="stat"><span class="e">👑</span><div class="k">시즌 1위</div><div class="v" style="font-size:18px;padding-top:6px">${top1 ? nm(top1.id) : '–'}</div></div>
+    <div class="stat"><span class="e">📅</span><div class="k">마지막 내전</div><div class="v t">${last.slice(5).replace('-', '/')}</div></div>
+    <div class="stat"><span class="e">👑</span><div class="k">시즌 1위</div><div class="v t">${top1 ? nm(top1.id) : '–'}</div></div>
   </div>
+  ${typeof mSupplyHTML === 'function' ? mSupplyHTML() : ''}
   <div class="home-grid">
     <div class="card"><div class="h2">🔥 지금 뜨거운 사람들</div><div class="g-awards h-aw">${[aw['연승 중'], aw['연패 중'], formA].map(awH).join('') || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>
     <div class="card"><div class="h2">🤝 케미 기록 <span class="sub">5판 이상 조합</span></div><div class="g-awards h-aw">${[aw['최고의 듀오'], aw['최악의 듀오'], aw['인간상성']].map(awH).join('') || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>
