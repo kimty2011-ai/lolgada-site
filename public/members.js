@@ -3,39 +3,39 @@
    닉네임 · 티어 · 주라인 · 부라인. 멤버 추가는 이 탭에서만.
    명단 자체는 S.players(팀 대항전·팀 뽑기와 공유), 티어·라인은 Firestore season4_games/roster/{멤버id}
    ========================================================= */
-const M_TIERS = [['CH', '챌린저', '#f4c874'], ['GM', '그랜드마스터', '#ef6b6b'], ['MA', '마스터', '#b36bf0'], ['DI', '다이아몬드', '#5aa6f0'], ['EM', '에메랄드', '#3fc98a'],
-  ['PL', '플래티넘', '#4fc1c4'], ['GO', '골드', '#e0b04a'], ['SI', '실버', '#9fb0bf'], ['BR', '브론즈', '#b07a55'], ['IR', '아이언', '#8a8a8a']];
+// 마스터부터 세분화. 마스터는 LP로 나누고, 1000LP 이상(그마·챌린저 포함)은 최고 티어 하나로
+const M_TIERS = [['M10', '1000LP 이상', '#f4c874'], ['M8', '마스터 800~999LP', '#e0609e'], ['M5', '마스터 500~799LP', '#d066e0'],
+  ['M2', '마스터 200~499LP', '#b36cf0'], ['M0', '마스터 0~199LP', '#9b7cf0'], ['DI', '다이아', '#5aa6f0'],
+  ['EM', '에메랄드', '#3fc98a'], ['PL', '플래티넘', '#4fc1c4'], ['GO', '골드', '#e0b04a'], ['SI', '실버', '#9fb0bf'], ['BR', '브론즈', '#b07a55'], ['IR', '아이언', '#8a8a8a']];
 const MT = Object.fromEntries(M_TIERS.map(([k, n, c], i) => [k, { k, n, c, i }]));
-const MEM = { q: '', sort: 'tier' };
+const MEM = { q: '', view: 'all' };
 const rosterOf = id => (GM.roster && GM.roster[id]) || {};
 const mTierBadge = k => MT[k] ? `<span class="m-tier" style="--c:${MT[k].c}">${MT[k].n}</span>` : '<span class="sub">미정</span>';
-const mLane = k => PK[k] ? `${PK[k].e} ${PK[k].n}` : '';
+const M_EMO = { SUP: '🩹' }; // 멤버 탭에서만 서폿 = 힐 느낌
+const mLane = k => PK[k] ? `${M_EMO[k] || PK[k].e} ${PK[k].n}` : '';
 const mSel = (attrs, cur, opts, ph) => `<select class="inp m-sel" ${attrs}><option value="">${ph}</option>${opts.map(([k, n]) => `<option value="${k}" ${cur === k ? 'selected' : ''}>${n}</option>`).join('')}</select>`;
 const M_LANES = () => G_POS.map(k => [k, mLane(k)]);
 
 function renderMembers() {
-  const A = isAdmin(), q = MEM.q.trim().toLowerCase();
-  const tierI = p => MT[rosterOf(p.id).tier]?.i ?? 99, byName = (a, b) => a.name.localeCompare(b.name, 'ko');
-  const list = S.players.filter(p => !q || p.name.toLowerCase().includes(q)).sort(MEM.sort === 'name' ? byName : (a, b) => tierI(a) - tierI(b) || byName(a, b));
-  // 구성 요약: 티어별 · 주라인별 인원
-  const cnt = f => { const m = {}; S.players.forEach(p => { const k = f(rosterOf(p.id)); if (k) m[k] = (m[k] || 0) + 1 }); return m };
-  const tc = cnt(r => MT[r.tier] && r.tier), lc = cnt(r => PK[r.main] && r.main);
-  const rows = list.map(p => { const r = rosterOf(p.id); return `<tr>
+  const A = isAdmin(), q = MEM.q.trim().toLowerCase(), v = PK[MEM.view] ? MEM.view : 'all';
+  const tierI = p => MT[rosterOf(p.id).tier]?.i ?? 99, byTier = (a, b) => tierI(a) - tierI(b) || a.name.localeCompare(b.name, 'ko');
+  const mainOf = p => rosterOf(p.id).main, laneN = k => S.players.filter(p => mainOf(p) === k).length;
+  // 기본은 전체 멤버 티어순, 라인 탭은 그 라인이 주라인인 멤버만
+  const list = S.players.filter(p => (v === 'all' || mainOf(p) === v) && (!q || p.name.toLowerCase().includes(q))).sort(byTier);
+  const row = p => { const r = rosterOf(p.id); return `<tr>
       <td class="g-nm"><b>${esc(p.name)}</b></td>
       <td>${A ? mSel(`data-c="mtier" data-id="${p.id}"`, r.tier, M_TIERS, '티어 미정') : mTierBadge(r.tier)}</td>
       <td>${A ? mSel(`data-c="mmain" data-id="${p.id}"`, r.main, M_LANES(), '미정') : (mLane(r.main) || '<span class="sub">미정</span>')}</td>
-      <td>${A ? mSel(`data-c="msub" data-id="${p.id}"`, r.sub, M_LANES().filter(([k]) => k !== r.main), '없음') : (mLane(r.sub) || '<span class="sub">–</span>')}</td></tr>` }).join('');
+      <td>${A ? mSel(`data-c="msub" data-id="${p.id}"`, r.sub, M_LANES().filter(([k]) => k !== r.main), '없음') : (mLane(r.sub) || '<span class="sub">–</span>')}</td></tr>` };
+  const rows = list.map(row).join('');
   V.innerHTML = `<div class="sec-head"><div><div class="h1">👥 멤버</div>
     <div class="sub">롤가다 구성원 ${S.players.length}명 · 여기 등록된 멤버가 팀 뽑기·팀 대항전에 나와요 · ${A ? '티어·라인은 고르면 바로 저장돼요' : '티어·라인은 운영진이 설정해요'}</div></div>
     ${A ? '<button class="btn pri" data-a="mnew">＋ 멤버 추가</button>' : ''}</div>
-  <div class="card m-sum">
-    <div><span class="sub">티어</span>${M_TIERS.filter(([k]) => tc[k]).map(([k]) => `${mTierBadge(k)}<b>${tc[k]}</b>`).join('') || '<span class="sub">아직 없음</span>'}</div>
-    <div><span class="sub">주라인</span>${G_POS.filter(k => lc[k]).map(k => `<span>${mLane(k)}</span><b>${lc[k]}</b>`).join('') || '<span class="sub">아직 없음</span>'}</div></div>
-  <div class="card"><div class="h2">📋 멤버 목록
-      <div class="g-seg">${[['tier', '티어순'], ['name', '이름순']].map(([k, n]) => `<button class="chip ${MEM.sort === k ? 'on' : ''}" data-a="msort" data-v="${k}">${n}</button>`).join('')}</div>
+  <div class="card"><div class="h2">📋 멤버 목록 <span class="sub">티어순</span>
       <input class="inp mla" style="width:180px" data-i="mq" placeholder="🔍 닉네임 검색" value="${esc(MEM.q)}"></div>
+    <div class="g-seg m-lanes">${[['all', `전체 <span class="sub">${S.players.length}</span>`], ...G_POS.map(k => [k, `${mLane(k)} <span class="sub">${laneN(k)}</span>`])].map(([k, n]) => `<button class="chip ${v === k ? 'on' : ''}" data-a="msort" data-v="${k}">${n}</button>`).join('')}</div>
     <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>주라인</th><th>부라인</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="4" class="empty-note">멤버가 없어요</td></tr>'}</tbody></table></div></div>`;
+      <tbody>${rows || `<tr><td colspan="4" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
 }
 
 const mWrite = (id, r) => fb.fs.setDoc(gDoc('roster', String(id)), { tier: r.tier || '', main: r.main || '', sub: r.sub || '', at: Date.now() });
@@ -69,15 +69,12 @@ async function mNewSave() {
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
 }
 Object.assign(CHG, { mtier: el => mSave(el, 'tier'), mmain: el => mSave(el, 'main'), msub: el => mSave(el, 'sub') });
-Object.assign(ACT, { msort: el => { MEM.sort = el.dataset.v; render() }, mnew: mNewModal, mnsave: mNewSave });
+Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mnew: mNewModal, mnsave: mNewSave });
 Object.assign(INP, { mq: el => { MEM.q = el.value; const pos = el.selectionStart; render(); const n = $('[data-i="mq"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) {} } } });
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
 .m-tier{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:800;font-size:12px;color:var(--c);border:1px solid var(--c);background:color-mix(in srgb,var(--c) 14%,transparent)}
 .m-sel{min-width:110px;padding:4px 6px;font-size:13px}
 .m-tbl td{vertical-align:middle}
-.m-sum{display:flex;flex-direction:column;gap:8px}
-.m-sum>div{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.m-sum>div>.sub:first-child{width:48px}
-.m-sum b{margin-right:8px}
+.m-lanes{margin:0 0 10px;flex-wrap:wrap}
 ` }));
