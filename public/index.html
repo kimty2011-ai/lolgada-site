@@ -961,7 +961,7 @@ function balanceCore(teams,pool,cap,W){
 
 /* ---------- 렌더 ---------- */
 const TABS=[
-  {k:'home',n:'🏠 홈'},{k:'stats',n:'📊 내전 통계'},{k:'roster',n:'👥 멤버'},{k:'sheet',n:'📋 명단표'},{k:'build',n:'⚔️ 팀 빌더'},{k:'casual',n:'🎮 일반내전'},{k:'draft',n:'🎲 팀 뽑기'},
+  {k:'home',n:'🏠 홈'},{k:'stats',n:'📊 내전 통계'},{k:'roster',n:'👥 멤버'},{k:'sheet',n:'📋 명단표'},{k:'build',n:'⚔️ 팀 빌더'},{k:'draft',n:'🎲 팀 뽑기'},
   {k:'records',n:'📜 내전 기록'},{k:'bracket',n:'🏆 대진·순위'},{k:'cfg',n:'🧮 점수 기준'},{k:'rules',n:'📜 룰북'},{k:'settings',n:'⚙️ 설정'}
 ];
 const V=$('#view');
@@ -1058,7 +1058,7 @@ function renderHome(){
       </div>
       <div class="row gap wrapr hero-btns">
         <button class="btn pri" data-a="tab" data-v="build">⚡ 팀 짜러 가기</button>
-        <button class="btn" data-a="tab" data-v="casual">🎮 일반내전</button>
+        <button class="btn" data-a="tab" data-v="draft">🎲 팀 뽑기</button>
         <button class="btn" data-a="tab" data-v="sheet">📋 명단표</button>
         <button class="btn" data-a="tab" data-v="rules">📜 룰북</button>
       </div>

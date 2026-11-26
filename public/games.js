@@ -373,38 +373,115 @@ const G_BOARDS = [
   { e: '🎮', n: '최다 출전', v: s => s.n, f: s => `${s.n}판` },
   { e: '🧙', n: '챔피언 폭', v: s => s.pool, f: s => `${s.pool}개`, d: '서로 다른 챔피언 수' },
 ];
+/* ----- 종합 순위 점수 (내전롤 '밸런스' 방식 기본값 · 운영진이 수정) -----
+   점수 = KDA* × kda + 승률(정수 %) × wr + ln(판수) × games
+   KDA* = KDA가 cap을 넘으면 넘는 부분은 capRate만 반영 */
+const DEF_RW = { kda: 15, wr: 1, games: 15, cap: 4, capRate: 0.4 };
+const rankW = () => { const w = { ...DEF_RW }, s = S.rankW || {}; for (const k in w) if (Number.isFinite(+s[k])) w[k] = +s[k]; return w };
+const kdaStar = (kda, w) => kda > w.cap ? w.cap + (kda - w.cap) * w.capRate : kda;
+const scoreOf = (s, w) => kdaStar(s.kda, w) * w.kda + Math.round(s.wr * 100) * w.wr + Math.log(s.n) * w.games;
+const rwText = w => `KDA*×${w.kda} + 승률×${w.wr} + log(판수)×${w.games}`;
+function gRanked(games, need, w) {
+  const st = gStats(games); st.rows.forEach(s => s.score = scoreOf(s, w));
+  st.ranked = st.rows.filter(s => s.n >= need).sort((a, b) => b.score - a.score || b.n - a.n);
+  st.rest = st.rows.filter(s => s.n < need).sort((a, b) => b.score - a.score);
+  return st;
+}
 function renderStats() {
   const games = GM.games.filter(g => GM.filter === 'all' || g.type === GM.filter);
-  const st = gStats(games), need = exposeNeed(games.length) || 0, col = G_COLS.find(c => c.k === GM.sort) || G_COLS[3];
-  const byCol = (a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n || b.wr - a.wr;
-  const ranked = st.rows.filter(s => s.n >= need).sort(byCol), rest = st.rows.filter(s => s.n < need).sort(byCol);
+  const need = exposeNeed(games.length) || 0, w = rankW(), st = gRanked(games, need, w);
   const A = isAdmin(), connected = !!(fb && fb.fs);
+  // 순위 변동: 가장 최근 날짜 경기를 빼고 매긴 순위와 비교
+  const lastDate = games.reduce((m, g) => g.date > m ? g.date : m, ''), prevGames = games.filter(g => g.date !== lastDate);
+  const prev = new Map(); if (prevGames.length) gRanked(prevGames, exposeNeed(prevGames.length) || 0, w).ranked.forEach((s, i) => prev.set(s.id, i + 1));
   const mostH = s => s.most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="${esc(champName(id))}">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('');
-  const formH = s => s.recent.map(w => `<i class="g-form ${w ? 'w' : 'l'}">${w ? '승' : '패'}</i>`).join('');
-  const rowH = (s, i) => { const m = player(s.id); return `<tr class="${i == null ? 'g-unranked' : ''}"><td class="g-rk">${i == null ? `<span class="sub" title="최소 ${need}판부터 순위">${need - s.n}판 더</span>` : i + 1}</td><td class="g-nm">${m ? nmH(m) : '?'}</td>
+  const formH = s => s.recent.map(x => `<i class="g-form ${x ? 'w' : 'l'}">${x ? '승' : '패'}</i>`).join('');
+  const maxKda = Math.max(4, ...st.rows.map(s => s.kda));
+  const bar = (v, max, cls) => `<span class="g-bar ${cls}"><i style="width:${Math.max(4, Math.min(100, v / max * 100))}%"></i></span>`;
+  const rankRow = (s, i) => { const m = player(s.id), p = prev.get(s.id), mv = i == null || !p ? '' : p > i + 1 ? `<span class="g-up">↑${p - i - 1}</span>` : p < i + 1 ? `<span class="g-dn2">↓${i + 1 - p}</span>` : '';
+    return `<tr class="g-lb ${i == null ? 'g-unranked' : ''} ${i === 0 ? 'top1' : ''}" data-a="gplayer" data-id="${s.id}">
+      <td class="g-rk">${i == null ? `<span class="sub" title="최소 ${need}판부터 순위">${need - s.n}판 더</span>` : `${i + 1}${mv ? `<div class="g-mv">${mv}</div>` : ''}`}</td>
+      <td class="g-nm">${m ? nmH(m) : '?'}</td><td>${s.n}</td>
+      <td class="g-kda3">${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}</td>
+      <td><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b>${bar(s.kda, maxKda, 'k')}</td>
+      <td><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b>${bar(s.wr, 1, 'w')}</td>
+      <td class="g-score">${s.score.toFixed(1)}</td></tr>` };
+  const detRow = s => { const m = player(s.id), r = st.ranked.indexOf(s); return `<tr class="${r < 0 ? 'g-unranked' : ''}" data-a="gplayer" data-id="${s.id}"><td class="g-rk">${r < 0 ? '–' : r + 1}</td><td class="g-nm">${m ? nmH(m) : '?'}</td>
     ${G_COLS.map(c => `<td>${c.f(s)}</td>`).join('')}<td class="g-forms">${formH(s)}</td><td class="g-mosts">${mostH(s)}</td></tr>` };
+  const col = G_COLS.find(c => c.k === GM.sort) || G_COLS[3];
+  const detail = [...st.rows].sort((a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n);
   const th = c => `<th class="g-sort ${GM.sort === c.k ? 'on' : ''}" data-a="gsort" data-v="${c.k}">${c.h}${GM.sort === c.k ? (GM.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
-  const boards = G_BOARDS.map(b => { const top = [...ranked].sort((x, y) => b.v(y) - b.v(x) || y.n - x.n).slice(0, 3);
+  const boards = G_BOARDS.map(b => { const top = [...st.ranked].sort((x, y) => b.v(y) - b.v(x) || y.n - x.n).slice(0, 3);
     return `<div class="g-board"><div class="g-bh">${b.e} ${b.n}${b.d ? ` <span class="sub">${b.d}</span>` : ''}</div>
       ${top.map((s, i) => `<div class="g-bt"><span class="g-medal">${['🥇', '🥈', '🥉'][i]}</span><span class="g-bn">${esc(player(s.id)?.name || '?')}</span><span class="g-bv">${b.f(s)}</span></div>`).join('') || '<div class="sub">순위 조건을 채운 멤버가 없어요</div>'}</div>` }).join('');
   const champs = st.champs.filter(c => c.id).sort((a, b) => b.n - a.n || b.w / b.n - a.w / a.n).slice(0, 12);
   V.innerHTML = `<div class="sec-head"><div><div class="h1">📊 내전 통계</div>
-    <div class="sub">📜 내전 기록 탭에 올라온 경기로 자동 집계 · 통계는 1판만 뛰어도 들어가고, <b style="color:var(--txt)">순위는 최소 판수를 채운 멤버만</b> 매겨져요</div></div>
+    <div class="sub">📜 내전 기록 탭에 올라온 경기로 자동 집계 · 통계는 1판만 뛰어도 들어가고, <b style="color:var(--txt)">순위는 최소 판수를 채운 멤버만</b> 매겨져요 · 이름을 누르면 상세</div></div>
     <button class="btn" data-a="tab" data-v="records">📤 결과 올리러 가기</button></div>
   ${gFilterHTML()}
   ${!connected ? `<div class="empty-note card">🔌 서버에 연결되면 통계가 보여요</div>` : !GM.got ? `<div class="empty-note card">⏳ 불러오는 중…</div>`
     : !games.length ? `<div class="card empty-note" style="padding:40px 14px">📭 아직 올라온 경기가 없어요 · 📜 내전 기록 탭에서 결과를 올려보세요</div>` : `
-  <div class="card"><div class="h2">🏅 부문별 순위 <span class="sub">${need ? `최소 ${need}판 이상 · 순위 대상 ${ranked.length}명` : '참여한 멤버 모두 대상'}</span></div>
-    <div class="g-boards">${boards}</div></div>
-  <div class="card"><div class="h2">📋 멤버 전체 통계 <span class="sub">${games.length}경기 · ${st.rows.length}명 · 열 제목을 누르면 정렬 · # = 순위 (최소 ${need}판)</span></div>
-    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
-      <tbody>${ranked.map((s, i) => rowH(s, i)).join('')}${rest.map(s => rowH(s, null)).join('')}</tbody></table></div>
+  <div class="g-hl">
+    <div class="g-hlc"><b>${games.length}</b><span>총 내전</span></div>
+    <div class="g-hlc"><b>${st.rows.length}</b><span>참가 멤버</span></div>
+    ${(() => { const t = [...st.ranked].sort((a, b) => b.kda - a.kda)[0]; return t ? `<div class="g-hlc"><b>${t.kda.toFixed(2)}</b><span>최고 KDA · ${esc(player(t.id)?.name || '')}</span></div>` : '' })()}
+    ${(() => { const t = [...st.ranked].sort((a, b) => b.wr - a.wr || b.n - a.n)[0]; return t ? `<div class="g-hlc"><b>${pct(t.wr)}</b><span>최고 승률 · ${esc(player(t.id)?.name || '')} (${t.n}판)</span></div>` : '' })()}
+  </div>
+  <div class="card"><div class="h2">🏆 종합 순위 <span class="g-formula">📊 ${rwText(w)}</span><span class="sub">· ${need ? `${need}판 이상만 순위` : '전원 순위'} · KDA*는 ${w.cap} 초과분 ${Math.round(w.capRate * 100)}%만 반영</span>
+      ${A ? '<button class="btn sm mla" data-a="grwedit">⚙️ 순위 공식 수정</button>' : ''}</div>
+    <div class="g-scroll"><table class="g-tbl g-rank g-lbt"><thead><tr><th>#</th><th>멤버</th><th>게임</th><th>K / D / A</th><th>KDA</th><th>승률</th><th>점수</th></tr></thead>
+      <tbody>${st.ranked.map((s, i) => rankRow(s, i)).join('')}${st.rest.map(s => rankRow(s, null)).join('')}</tbody></table></div>
     ${st.unknown.length || st.guests || st.blanks ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''}${st.blanks ? ` · 이름 없는 기록 ${st.blanks}칸` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [게임 ID 연결]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
   </div>
+  <div class="card"><div class="h2">🏅 부문별 순위 <span class="sub">${need ? `${need}판 이상 · 순위 대상 ${st.ranked.length}명` : '참여한 멤버 모두 대상'}</span></div>
+    <div class="g-boards">${boards}</div></div>
+  <details class="card g-det"><summary class="h2">📋 멤버 상세 통계 <span class="sub">${st.rows.length}명 · 열 제목을 누르면 정렬</span></summary>
+    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>순위</th><th>멤버</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
+      <tbody>${detail.map(detRow).join('')}</tbody></table></div></details>
   <div class="card"><div class="h2">🧩 챔피언 통계 <span class="sub">많이 나온 순 · 게스트·unknown 포함 전체 경기 기준</span></div>
     <div class="g-champs">${champs.map(c => `<div class="g-champ"><img src="${champImg(c.id)}" alt=""><div><b>${esc(champName(c.id))}</b><span class="sub">${c.n}판 · 승률 ${pct(c.w / c.n)} · KDA ${((c.k + c.a) / Math.max(1, c.d)).toFixed(2)}</span></div></div>`).join('')}</div></div>`}
   ${A && connected ? gAdminHTML() : ''}`;
+  if (UI.gDetOpen) { const d = $('.g-det'); if (d) d.open = true }
   gAfterRender();
+}
+// 멤버 상세: 기본 지표 · 모스트 챔피언 · 베스트/워스트 듀오
+function gPlayerModal(mid) {
+  const games = GM.games.filter(g => GM.filter === 'all' || g.type === GM.filter);
+  const need = exposeNeed(games.length) || 0, w = rankW(), st = gRanked(games, need, w), s = st.rows.find(r => r.id === mid), m = player(mid);
+  if (!s || !m) return;
+  const rank = st.ranked.indexOf(s);
+  const ch = {}, duo = new Map();
+  games.forEach(g => g.teams.forEach((t, ti) => { if (!t.players.some(p => memberOf(p.rid) === mid)) return; const won = g.win === ti + 1;
+    t.players.forEach(p => { const pm = memberOf(p.rid);
+      if (pm === mid) { const c = ch[p.champ] || (ch[p.champ] = { n: 0, w: 0 }); c.n++; if (won) c.w++ }
+      else if (pm != null && pm !== 'guest') { const d = duo.get(pm) || { n: 0, w: 0 }; d.n++; if (won) d.w++; duo.set(pm, d) } }) }));
+  const duos = [...duo.entries()].filter(([, d]) => d.n >= 3).map(([id, d]) => ({ id, ...d, wr: d.w / d.n }));
+  const best = [...duos].sort((a, b) => b.wr - a.wr || b.n - a.n).slice(0, 3), worst = [...duos].sort((a, b) => a.wr - b.wr || b.n - a.n).slice(0, 2);
+  const duoH = d => `<div class="g-duo"><b>${esc(player(d.id)?.name || '?')}</b><span class="sub">${d.n}게임 함께</span><b class="${d.wr >= 0.5 ? 'g-up' : 'g-dn2'}">${pct(d.wr)}</b></div>`;
+  modal(`<div class="mh">${nmH(m)} <span class="sub">${rank >= 0 ? `종합 ${rank + 1}위 · ${s.score.toFixed(1)}점` : `${need - s.n}판 더 하면 순위 진입`}</span></div>
+    <div class="g-hl" style="margin:12px 0">
+      <div class="g-hlc"><b>${s.n}</b><span>게임</span></div><div class="g-hlc"><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b><span>KDA</span></div>
+      <div class="g-hlc"><b>${pct(s.wr)}</b><span>승률 · ${s.w}승 ${s.l}패</span></div><div class="g-hlc"><b>${s.csm.toFixed(1)}</b><span>CS/분</span></div></div>
+    <div class="sub">평균 ${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)} · 킬관여 ${pct(s.kp)} · 분당 골드 ${Math.round(s.gpm).toLocaleString()} · 챔피언 ${s.pool}개 · 최장 ${s.best}연승</div>
+    <div class="h2" style="margin-top:14px">🧩 모스트 챔피언</div>
+    <div class="g-champs">${Object.entries(ch).sort((a, b) => b[1].n - a[1].n).slice(0, 6).map(([id, c]) => `<div class="g-champ"><img src="${champImg(id)}" alt=""><div><b>${esc(champName(id))}</b><span class="sub">${c.n}판 · 승률 ${pct(c.w / c.n)}</span></div></div>`).join('')}</div>
+    <div class="row2" style="margin-top:14px"><div><div class="h2">🤝 베스트 듀오</div>${best.map(duoH).join('') || '<div class="sub">3게임 이상 함께한 멤버가 없어요</div>'}</div>
+      <div><div class="h2">💔 워스트 듀오</div>${worst.map(duoH).join('') || '<div class="sub">—</div>'}</div></div>
+    <div class="mbtns"><button class="btn pri" data-a="mclose">닫기</button></div>`, false, 'wide');
+}
+// 운영진: 순위 공식 수정 (사이트 데이터 S.rankW 에 저장)
+function gRankWModal() {
+  if (!isAdmin()) return toast(RO_MSG, 'err');
+  const w = rankW(), f = (k, label, step, hint) => `<div><label class="fl">${label}</label><input class="inp" type="number" step="${step}" id="rw_${k}" value="${w[k]}" style="width:100%"><div class="sub">${hint}</div></div>`;
+  modal(`<div class="mh">⚙️ 종합 순위 공식</div>
+    <div class="sub">점수 = KDA* × <b>KDA 가중치</b> + 승률(%) × <b>승률 가중치</b> + ln(판수) × <b>판수 가중치</b> · 기본값은 내전롤 '밸런스' 방식</div>
+    <div class="af" style="margin-top:12px">
+      <div class="row2">${f('kda', 'KDA 가중치', '0.5', '기본 15')}${f('wr', '승률 가중치', '0.1', '기본 1.0 (승률 %에 곱함)')}</div>
+      <div class="row2">${f('games', '판수 가중치', '0.5', '기본 15 (ln 판수에 곱함)')}${f('cap', 'KDA 상한 기준', '0.5', '기본 4.0 · 이 값을 넘는 KDA는')}</div>
+      <div class="row2">${f('capRate', '상한 초과분 반영 비율', '0.05', '기본 0.4 (= 40%만 반영)')}<div></div></div>
+      <div class="sub">순위에 필요한 최소 판수는 🏆 팀 대항전 → 🧮 점수 기준의 "순위 노출 조건"을 따라요</div>
+    </div>
+    <div class="mbtns"><button class="btn" data-a="grwreset">기본값으로</button><button class="btn" data-a="mclose">취소</button><button class="btn pri" data-a="grwsave">저장</button></div>`, false, 'wide');
 }
 const gFilterHTML = () => `<div class="card toolbar"><div class="g-seg">${[['all', '전체'], ['casual', G_TYPES.casual], ['team', G_TYPES.team]].map(([k, n]) => `<button class="chip ${GM.filter === k ? 'on' : ''}" data-a="gfilter" data-v="${k}">${n}</button>`).join('')}</div></div>`;
 // 기록 탭: 제목 + 오늘 사용량 + 올리기 버튼 + 종류 필터
@@ -478,6 +555,13 @@ Object.assign(ACT, {
   gskip: () => { if (!GUP || GUP.busy) return; if (GUP.i + 1 < GUP.n) { GUP.i++; gNext() } },
   gretry: () => GUP && gNext(),
   gview1: el => gViewGame(el.dataset.id),
+  gplayer: el => gPlayerModal(Number(el.dataset.id)),
+  grwedit: () => gRankWModal(),
+  grwreset: () => { const w = DEF_RW; Object.keys(w).forEach(k => { const i = $('#rw_' + k); if (i) i.value = w[k] }) },
+  grwsave: () => {
+    const w = {}; for (const k of Object.keys(DEF_RW)) { const v = +($('#rw_' + k)?.value); if (!Number.isFinite(v) || v < 0 || v > 1000) return toast('0 이상의 숫자로 적어주세요', 'err'); w[k] = v }
+    if (commit(() => { S.rankW = w })) { closeModal(); toast('⚙️ 순위 공식을 바꿨어요 · 모든 화면에 바로 반영돼요') }
+  },
   gedit: el => gEditGame(el.dataset.id),
   gmdel: el => { if (!isAdmin()) return toast(RO_MSG, 'err'); const id = el.dataset.id;
     ask('🗑 경기 기록 삭제', '이 경기 기록과 원본 스크린샷을 지울까요? 통계에서도 빠지고, 되돌릴 수 없어요.', async () => {
@@ -499,6 +583,7 @@ Object.assign(CHG, {
 const gFileIn = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true, hidden: true, id: 'gamef' });
 document.body.append(gFileIn);
 gFileIn.addEventListener('change', e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) gOpenUpload(fs) });
+document.addEventListener('toggle', e => { if (e.target.classList?.contains('g-det')) UI.gDetOpen = e.target.open }, true);
 const gUpTab = () => UI.tab === 'records' && M.classList.contains('hidden'); // 결과 올리기는 기록 탭에서만
 document.addEventListener('paste', e => {
   if (!gUpTab()) return;
@@ -562,6 +647,18 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .g-res{font-weight:900;width:20px;font-size:12px}.g-gt.win .g-res{color:var(--teal2)}.g-gt.lose .g-res{color:var(--red)}
 .subtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:8px;border-radius:14px;background:var(--glass);border:1px solid var(--line2)}
 body.capture .subtabs{display:none}
+.g-hl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.g-hlc{border:1px solid var(--line2);border-radius:14px;padding:12px 14px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
+.g-hlc b{display:block;font-size:24px;font-weight:900;color:var(--txt)}.g-hlc span{font-size:12px;color:var(--mut)}
+.g-formula{font-size:12px;font-weight:800;color:var(--teal2);background:rgba(10,200,185,.1);border-radius:999px;padding:3px 10px}
+.g-lbt td{padding:9px 8px}.g-lb{cursor:pointer}.g-lb:hover td{background:rgba(255,255,255,.03)}.g-lb.top1 .g-rk{color:var(--gold2);font-size:16px}
+.g-mv{font-size:10px;font-weight:800}.g-dn2{color:var(--red)}
+.g-bar{display:block;height:4px;border-radius:3px;background:rgba(255,255,255,.08);margin-top:4px;min-width:60px}.g-bar i{display:block;height:100%;border-radius:3px}
+.g-bar.k i{background:var(--violet)}.g-bar.w i{background:var(--teal)}
+.g-score{font-weight:900;font-size:15px;color:var(--gold2)}
+.g-det summary{cursor:pointer;margin-bottom:0}.g-det[open] summary{margin-bottom:12px}
+.g-rank tr[data-a]{cursor:pointer}
+.g-duo{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line2);border-radius:10px;margin-bottom:6px}.g-duo .sub{flex:1}
 .g-boards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .g-board{border:1px solid var(--line2);border-radius:14px;padding:10px 12px;background:var(--glass)}
 .g-bh{font-weight:900;margin-bottom:6px}.g-bt{display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px}
