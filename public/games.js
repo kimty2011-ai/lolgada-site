@@ -11,7 +11,7 @@ const FB_DOC_G = ['lolgadaCenter', G_DEV ? 'season4_games_dev' : 'season4_games'
 const G_API = '/api/extract';
 const G_TYPES = { casual: '🎮 일반 내전', team: '🏆 팀대항전' };
 // filter/season/pos: 통계 탭 (기본: 이번 시즌 일반 내전) · rf/rseason: 기록 탭
-const GM = { games: [], ids: {}, got: false, filter: 'casual', season: 'cur', pos: 'ALL', view: 'rank', sort: 'wr', dir: -1, csort: 'n', cdir: -1, pq: '', cq: '', rf: 'all', rseason: 'cur', quota: null, unsub: [] };
+const GM = { games: [], ids: {}, got: false, filter: 'casual', season: 'cur', pos: 'ALL', view: 'rank', sel: null, sort: 'wr', dir: -1, csort: 'tier', cdir: -1, pq: '', cq: '', rf: 'all', rseason: 'cur', quota: null, unsub: [] };
 let GUP = null; // 업로드/수정 진행 상태
 
 /* ---------- 이름 정규화 · 연결 ---------- */
@@ -493,9 +493,10 @@ function gRankHTML(games, st, need, w, pos) {
   const lastDate = games.reduce((m, g) => g.date > m ? g.date : m, ''), prevGames = games.filter(g => g.date !== lastDate);
   const prev = new Map(); if (prevGames.length) gRanked(prevGames, exposeNeed(prevGames.length) || 0, w, pos).ranked.forEach((s, i) => prev.set(s.id, i + 1));
   const maxKda = Math.max(4, ...st.rows.map(s => s.kda));
+  const selId = st.rows.some(s => s.id === GM.sel) ? GM.sel : (st.ranked[0] || st.rest[0])?.id;
   const bar = (v, max, cls) => `<span class="g-bar ${cls}"><i style="width:${Math.max(4, Math.min(100, v / max * 100))}%"></i></span>`;
   const rankRow = (s, i) => { const m = player(s.id), p = prev.get(s.id), mv = i == null || !p ? '' : p > i + 1 ? `<span class="g-up">↑${p - i - 1}</span>` : p < i + 1 ? `<span class="g-dn2">↓${i + 1 - p}</span>` : '';
-    return `<tr class="g-lb ${i == null ? 'g-unranked' : ''} ${i === 0 ? 'top1' : ''}" data-a="gplayer" data-id="${s.id}">
+    return `<tr class="g-lb ${i == null ? 'g-unranked' : ''} ${i === 0 ? 'top1' : ''} ${s.id === selId ? 'sel' : ''}" data-a="gsel" data-id="${s.id}">
       <td class="g-rk">${i == null ? `<span class="sub" title="최소 ${need}판부터 순위">${need - s.n}판 더</span>` : `${i + 1}${mv ? `<div class="g-mv">${mv}</div>` : ''}`}</td>
       <td class="g-nm">${m ? nmH(m) : '?'}${s.mainPos ? ` <span class="g-pos-t">${posLabel(s.mainPos)}</span>` : ''}</td><td>${s.n}</td>
       <td class="g-kda3">${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}</td>
@@ -514,51 +515,113 @@ function gRankHTML(games, st, need, w, pos) {
   </div>
   <div class="card"><div class="h2">🏆 종합 순위 ${pos !== 'ALL' ? `<span class="tag t-teal">${posLabel(pos)}</span>` : ''}<span class="g-formula">📊 ${rwText(w)}</span><span class="sub">· ${need ? `${need}판 이상만 순위` : '전원 순위'} · KDA*는 ${w.cap} 초과분 ${Math.round(w.capRate * 100)}%만 반영</span>
       ${A ? '<button class="btn sm mla" data-a="grwedit">⚙️ 순위 공식 수정</button>' : ''}</div>
-    <div class="g-scroll"><table class="g-tbl g-rank g-lbt"><thead><tr><th>#</th><th>멤버</th><th>게임</th><th>K / D / A</th><th>KDA</th><th>승률</th><th>점수</th></tr></thead>
+    <div class="g-lbwrap"><div class="g-scroll g-lbmain"><table class="g-tbl g-rank g-lbt"><thead><tr><th>#</th><th>멤버</th><th>게임</th><th>K / D / A</th><th>KDA</th><th>승률</th><th>점수</th></tr></thead>
       <tbody>${st.ranked.map((s, i) => rankRow(s, i)).join('')}${st.rest.map(s => rankRow(s, null)).join('')}</tbody></table></div>
+      ${selId != null ? gSidePanel(games, st, pos, selId, need) : ''}</div>
     ${st.unknown.length || st.guests || st.blanks ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''}${st.blanks ? ` · 이름 없는 기록 ${st.blanks}칸` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [닉네임 합치기]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
   </div>
   ${pos === 'ALL' ? `<div class="card"><div class="h2">🎖️ 부문별 1위 <span class="sub">승률·분당 기록은 ${need ? `${need}판 이상` : '참여한'} 멤버 중 · 누적 기록은 전원</span></div>
     <div class="g-awards">${awards || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>` : ''}`;
 }
-// 👤 선수: 카드 목록 + 상세 통계 표
+// 멤버 한 명의 경기 단위 집계: 챔피언별 · 함께 뛴 멤버 (포지션 필터 반영)
+function gPlayerDetail(mid, games, pos = 'ALL') {
+  const ch = {}, duo = new Map();
+  games.forEach(g => g.teams.forEach((t, ti) => { const me = t.players.find(p => memberOf(p.rid) === mid); if (!me || (pos !== 'ALL' && me.pos !== pos)) return; const won = g.win === ti + 1;
+    const c = ch[me.champ] || (ch[me.champ] = { n: 0, w: 0, k: 0, d: 0, a: 0 }); c.n++; if (won) c.w++; c.k += me.k; c.d += me.d; c.a += me.a;
+    t.players.forEach(p => { const pm = memberOf(p.rid); if (pm === mid || pm == null || pm === 'guest') return; const d = duo.get(pm) || { n: 0, w: 0 }; d.n++; if (won) d.w++; duo.set(pm, d) }) }));
+  const duos = [...duo.entries()].filter(([, d]) => d.n >= 3).map(([id, d]) => ({ id, ...d, wr: d.w / d.n }));
+  return { champs: Object.entries(ch).sort((a, b) => b[1].n - a[1].n || b[1].w - a[1].w),
+    best: [...duos].sort((a, b) => b.wr - a.wr || b.n - a.n).slice(0, 3), worst: [...duos].sort((a, b) => a.wr - b.wr || b.n - a.n).slice(0, 1) };
+}
+// 순위표 옆 선수 카드 (내전롤 스타일): 기본 스탯 · 능력치 · 모스트 챔피언 · 듀오
+function gSidePanel(games, st, pos, mid, need) {
+  const s = st.rows.find(r => r.id === mid), m = player(mid); if (!s || !m) return '';
+  const rank = st.ranked.indexOf(s), det = gPlayerDetail(mid, games, pos);
+  // 능력치: 참가 멤버 중 백분위
+  const pctl = (f) => { const vs = st.rows.map(f).sort((a, b) => a - b), v = f(s); return vs.length > 1 ? vs.filter(x => x < v).length / (vs.length - 1) : 1 };
+  const stats = [['KDA', r => r.kda], ['승률', r => r.wr], ['킬관여', r => r.kp], ['챔프폭', r => r.pool], ['CS/분', r => r.csm]];
+  const kdaOf = c => ((c.k + c.a) / Math.max(1, c.d)).toFixed(2);
+  const duoH = (d, cls) => `<div class="g-sduo"><b>${esc(player(d.id)?.name || '?')}</b><span class="sub">${d.n}게임 함께</span><b class="${cls}">${pct(d.wr)}</b></div>`;
+  return `<aside class="g-side">
+    <div class="g-sh"><div><b>${esc(m.name)}</b><div class="sub">${s.n}게임 · ${s.mainPos ? posLabel(s.mainPos) : '포지션 –'}</div></div>
+      <div class="g-srank">${rank >= 0 ? `<b>${rank + 1}위</b><span>${s.score.toFixed(1)}점</span>` : `<span>${need - s.n}판 더</span>`}</div></div>
+    <div class="g-stiles"><div><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b><span>KDA</span></div><div><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b><span>승률 · ${s.w}승 ${s.l}패</span></div><div><b>${s.csm.toFixed(1)}</b><span>CS/분</span></div></div>
+    <div class="g-skda">평균 <b>${(s.k / s.n).toFixed(1)}</b> / <b class="g-dn2">${(s.d / s.n).toFixed(1)}</b> / <b>${(s.a / s.n).toFixed(1)}</b></div>
+    <div class="g-st">능력치 <span class="sub">참가 멤버 중</span></div>
+    ${stats.map(([n, f]) => { const p = pctl(f); return `<div class="g-abil"><span>${n}</span><span class="g-bar w"><i style="width:${Math.max(4, Math.round(p * 100))}%"></i></span><span class="sub">상위 ${Math.max(1, Math.round((1 - p) * 100))}%</span></div>` }).join('')}
+    <div class="g-st">모스트 챔피언</div>
+    ${det.champs.slice(0, 5).map(([id, c]) => `<div class="g-smost"><img src="${champImg(id)}" alt=""><div><b>${esc(champName(id))}</b><span class="sub">${c.n}판 · KDA ${kdaOf(c)}</span></div><b class="${c.w / c.n >= 0.5 ? 'g-up' : 'g-dn'}">${pct(c.w / c.n)}</b></div>`).join('')}
+    ${det.best.length ? `<div class="g-st">🤝 베스트 듀오</div>${det.best.map(d => duoH(d, 'g-up')).join('')}` : ''}
+    ${det.worst.length && det.worst[0].wr < 0.5 ? `<div class="g-st">💔 워스트 듀오</div>${det.worst.map(d => duoH(d, 'g-dn2')).join('')}` : ''}
+    <button class="btn sm" style="width:100%;margin-top:10px" data-a="gplayer" data-id="${mid}">전체 기록 보기 ›</button>
+  </aside>`;
+}
+// 👤 선수: 상세 통계 표
 function gPlayersHTML(games, st, need) {
   const q = (GM.pq || '').trim().toLowerCase();
   const list = [...st.rows].filter(s => !q || (player(s.id)?.name || '').toLowerCase().includes(q)).sort((a, b) => b.n - a.n);
   const rankOf = new Map(st.ranked.map((s, i) => [s.id, i + 1]));
   const col = G_COLS.find(c => c.k === GM.sort) || G_COLS[3];
-  const detail = [...st.rows].sort((a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n);
+  const detail = [...st.rows].filter(s => !q || (player(s.id)?.name || '').toLowerCase().includes(q)).sort((a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n);
   const th = c => `<th class="g-sort ${GM.sort === c.k ? 'on' : ''}" data-a="gsort" data-v="${c.k}">${c.h}${GM.sort === c.k ? (GM.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
   const formH = s => s.recent.map(x => `<i class="g-form ${x ? 'w' : 'l'}">${x ? '승' : '패'}</i>`).join('');
   const mostH = s => s.most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('');
-  return `<div class="card"><div class="h2">👤 선수 통계 <span class="sub">${st.rows.length}명 · 카드를 누르면 상세</span>
+  return `<div class="card"><div class="h2">👤 선수 통계 <span class="sub">${st.rows.length}명 · 열 제목을 누르면 정렬 · 이름을 누르면 상세</span>
       <input class="inp mla" style="width:180px" data-i="gpq" placeholder="🔍 멤버 검색" value="${esc(GM.pq || '')}"></div>
-    <div class="g-pcards" id="gpcards">${list.map(s => { const m = player(s.id), r = rankOf.get(s.id);
-      return `<div class="g-pcard" data-a="gplayer" data-id="${s.id}"><div class="g-pc-h"><b>${m ? esc(m.name) : '?'}</b>${r ? `<span class="tag t-gold">${r}위</span>` : `<span class="tag t-mut">${need - s.n}판 더</span>`}</div>
-        <div class="sub">${s.n}게임 · ${s.mainPos ? posLabel(s.mainPos) : '포지션 –'}</div>
-        <div class="g-pc-s"><span>KDA <b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b></span><span>승률 <b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b></span></div>
-        <div class="g-pc-m">${mostH(s)}</div></div>` }).join('') || '<div class="empty-note">검색 결과가 없어요</div>'}</div></div>
-  <details class="card g-det"><summary class="h2">📋 상세 통계 표 <span class="sub">열 제목을 누르면 정렬</span></summary>
-    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>순위</th><th>멤버</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
-      <tbody>${detail.map(s => { const m = player(s.id), r = rankOf.get(s.id); return `<tr class="${r ? '' : 'g-unranked'}" data-a="gplayer" data-id="${s.id}"><td class="g-rk">${r || '–'}</td><td class="g-nm">${m ? nmH(m) : '?'}</td>
-        ${G_COLS.map(c => `<td>${c.f(s)}</td>`).join('')}<td class="g-forms">${formH(s)}</td><td class="g-mosts">${mostH(s)}</td></tr>` }).join('')}</tbody></table></div></details>`;
+    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>순위</th><th>멤버</th><th>포지션</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
+      <tbody>${detail.map(s => { const m = player(s.id), r = rankOf.get(s.id); return `<tr class="${r ? '' : 'g-unranked'}" data-a="gplayer" data-id="${s.id}"><td class="g-rk">${r || `<span class="sub">${need - s.n}판 더</span>`}</td><td class="g-nm">${m ? nmH(m) : '?'}</td><td class="sub">${s.mainPos ? posLabel(s.mainPos) : '–'}</td>
+        ${G_COLS.map(c => `<td>${c.f(s)}</td>`).join('')}<td class="g-forms">${formH(s)}</td><td class="g-mosts">${mostH(s)}</td></tr>` }).join('') || '<tr><td colspan="14" class="empty-note">검색 결과가 없어요</td></tr>'}</tbody></table></div></div>`;
 }
-// 🧩 챔피언: 픽·승률·KDA·CS/분·주 포지션·최다 사용 멤버
+/* ----- 챔피언 티어 -----
+   OP.GG 솔로랭크 티어(16.23 패치 · KR 에메랄드+ · 2026-11-26 기준)를 바탕으로,
+   우리 내전 기록(판수가 쌓일수록 비중↑)의 승률·픽률을 섞어 OP/1~5티어를 매긴다.
+   shortcut: 외부 티어는 패치마다 바뀌는 고정값 — 새 패치가 나오면 G_OPGG를 갱신 */
+const G_OPGG_PATCH = '16.23';
+const G_OPGG = {
+  TOP: '말파이트:1,다리우스:1,가렌:1,카밀:1,케일:1,갱플랭크:1,오른:1,세트:2,아트록스:2,쉔:2,모데카이저:2,이렐리아:2,피오라:2,레넥톤:2,요네:2,신지드:2,자헨:2,사이온:2,잭스:3,클레드:3,티모:3,판테온:3,올라프:3,문도 박사:3,초가스:3,트린다미어:3,나서스:3,아칼리:3,워윅:3,우르곳:3,그웬:4,일라오이:4,나르:4,리븐:4,뽀삐:4,그라가스:4,암베사:4,제이스:4,볼리베어:4,케넨:4,야스오:4,리산드라:4,퀸:4,요릭:4,탐 켄치:4,오공:4,애니비아:4,블라디미르:5,사일러스:5,크산테:5,하이머딩거:5,오로라:5,트런들:5,스웨인:5,마오카이:5',
+  JGL: '오공:1,릴리아:1,초가스:1,비에고:1,브라이어:1,자르반 4세:1,리 신:1,쉬바나:1,케인:2,에코:2,탈론:2,나피리:2,엘리스:2,샤코:2,그레이브즈:2,사일러스:2,워윅:2,자이라:2,마스터 이:2,헤카림:2,벨베스:2,카직스:2,자크:3,자헨:3,바이:3,세주아니:3,탈리야:3,이블린:3,렉사이:3,사이온:3,니달리:3,피들스틱:3,킨드레드:3,신 짜오:3,다리우스:3,다이애나:3,람머스:3,누누와 윌럼프:3,녹턴:3,아이번:3,아무무:4,우디르:4,그웬:4,문도 박사:4,아트록스:4,렝가:4,스카너:4,키아나:4,그라가스:4,피즈:5,볼리베어:5,마오카이:5,트런들:5,제드:5,잭스:5',
+  MID: '아리:1,에코:1,카타리나:1,트위스티드 페이트:1,애니:1,피즈:2,블라디미르:2,제라스:2,제드:2,리산드라:2,야스오:2,요네:2,갈리오:2,벡스:2,빅토르:2,럭스:2,흐웨이:3,르블랑:3,아칼리:3,다이애나:3,말자하:3,신드라:3,조이:3,오로라:3,로크:3,사일러스:3,카사딘:3,베이가:3,벨코즈:4,탈론:4,아우렐리온 솔:4,아크샨:4,탈리야:4,애니비아:4,이렐리아:4,멜:4,리븐:4,오리아나:4,스웨인:4,케일:4,판테온:4,키아나:4,아지르:4,나피리:4,사이온:4,직스:4,말파이트:4,카시오페아:5,라이즈:5,브랜드:5,트리스타나:5,이즈리얼:5,스몰더:5',
+  ADC: '자야:1,진:1,카이사:1,징크스:1,벨코즈:2,미스 포츈:2,트위치:2,코그모:2,스몰더:2,제리:2,유나라:3,카서스:3,코르키:3,스웨인:3,흐웨이:3,시비르:3,야스오:4,직스:4,베이가:4,카타리나:4,아우렐리온 솔:4,아펠리오스:4,애쉬:4,빅토르:4,케이틀린:4,트리스타나:4,루시안:4,닐라:5,드레이븐:5,사미라:5,이즈리얼:5,멜:5,칼리스타:5,베인:5,바루스:5,제라스:5,신드라:5',
+  SUP: '쓰레쉬:1,나미:1,레오나:1,블리츠크랭크:1,알리스타:1,세나:2,소나:2,룰루:2,브라움:2,세라핀:2,렐:2,라칸:2,노틸러스:2,소라카:2,잔나:2,밀리오:2,질리언:2,벨코즈:3,파이크:3,럭스:3,타릭:3,카르마:3,모르가나:3,바드:3,마오카이:3,갈리오:3,자이라:3,뽀삐:3,아무무:3,유미:3,레나타 글라스크:3,탐 켄치:3,브랜드:3,제라스:4,니코:4,판테온:4,스웨인:4,엘리스:4,흐웨이:4,쉔:5,조이:5,사일러스:5,샤코:5,르블랑:5,카밀:5,애쉬:5',
+};
+let G_EXT = null; // { POS: { champId: tier } } — 챔피언 목록(한글 이름)이 로드된 뒤 만든다
+function extTier(id, pos) {
+  if (!G_EXT && CHAMP.list.length) { const byKo = {}; CHAMP.list.forEach(c => byKo[c.name] = c.id); G_EXT = {}; for (const [p, s] of Object.entries(G_OPGG)) { G_EXT[p] = {}; s.split(',').forEach(x => { const [n, t] = x.split(':'); if (byKo[n]) G_EXT[p][byKo[n]] = +t }) } }
+  if (!G_EXT) return null;
+  if (pos && G_EXT[pos]?.[id]) return G_EXT[pos][id];
+  const all = Object.values(G_EXT).map(m => m[id]).filter(Boolean); return all.length ? Math.min(...all) : null;
+}
+// 외부 티어만 있을 때는 같은 티어가 나오도록 맞춘 점수 · OP는 우리 내전 성적까지 좋아야 나온다
+const TIER_SC = { 1: 0.70, 2: 0.58, 3: 0.48, 4: 0.39, 5: 0.30 };
+function champTier(c, games) {
+  const pos = Object.entries(c.posc).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  const ext = extTier(c.id, pos), extSc = ext ? TIER_SC[ext] : 0.35;
+  const swr = (c.w + 5) / (c.n + 10), pr = c.n / Math.max(1, games); // 판수 적으면 50%로 당겨서 봄
+  const grp = Math.max(0, Math.min(1, 0.5 + (swr - 0.5) * 2.5 + Math.min(0.12, pr * 0.4)));
+  const a = 0.6 * c.n / (c.n + 8), sc = a * grp + (1 - a) * extSc;
+  const tier = sc >= 0.75 ? 0 : sc >= 0.63 ? 1 : sc >= 0.53 ? 2 : sc >= 0.44 ? 3 : sc >= 0.35 ? 4 : 5;
+  return { sc, tier, ext };
+}
+const tierBadge = t => `<span class="g-tier t${t}">${t === 0 ? 'OP' : t}</span>`;
+// 🧩 챔피언: 티어·픽·승률·KDA·CS/분·주 포지션·최다 사용 멤버
 const G_CCOLS = [
+  { k: 'tier', h: '티어', v: c => c.ts.sc },
   { k: 'n', h: '픽', v: c => c.n }, { k: 'pr', h: '픽률', v: c => c.pr }, { k: 'wr', h: '승률', v: c => c.w / c.n },
   { k: 'kda', h: 'KDA', v: c => (c.k + c.a) / Math.max(1, c.d) }, { k: 'csm', h: 'CS/분', v: c => c.sec ? c.cs / (c.sec / 60) : 0 },
 ];
 function gChampsHTML(games, st) {
-  const cs = GM.csort || 'n', cd = GM.cdir || -1, col = G_CCOLS.find(c => c.k === cs) || G_CCOLS[0];
+  const cs = GM.csort || 'tier', cd = GM.cdir || -1, col = G_CCOLS.find(c => c.k === cs) || G_CCOLS[0];
   const q = (GM.cq || '').trim().toLowerCase();
-  const list = st.champs.filter(c => c.id && (!q || champName(c.id).toLowerCase().includes(q))).map(c => ({ ...c, pr: c.n / games.length }))
+  const list = st.champs.filter(c => c.id && (!q || champName(c.id).toLowerCase().includes(q))).map(c => ({ ...c, pr: c.n / games.length, ts: champTier(c, games.length) }))
     .sort((a, b) => cd * (col.v(a) - col.v(b)) || b.n - a.n);
   const th = c => `<th class="g-sort ${cs === c.k ? 'on' : ''}" data-a="gcsort" data-v="${c.k}">${c.h}${cs === c.k ? (cd < 0 ? ' ▼' : ' ▲') : ''}</th>`;
   return `<div class="card"><div class="h2">🧩 챔피언 통계 <span class="sub">${list.length}개 챔피언 · ${games.length}경기 · 게스트·unknown 포함 전체 경기 기준 · 누르면 상세</span>
       <input class="inp mla" style="width:180px" data-i="gcq" placeholder="🔍 챔피언 검색" value="${esc(GM.cq || '')}"></div>
+    <div class="sub" style="margin:-4px 0 10px">🏅 <b>티어</b> = OP.GG 솔로랭크 티어(${G_OPGG_PATCH} 패치 · KR 에메랄드+, 주 포지션 기준) + 우리 내전 승률·픽률. 우리 기록이 많이 쌓인 챔피언일수록 내전 성적 비중이 커져요 (최대 60%)</div>
     <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>챔피언</th>${G_CCOLS.map(th).join('')}<th>주 포지션</th><th>최다 사용 멤버</th></tr></thead>
       <tbody id="gctbody">${list.map(c => { const mp = Object.entries(c.posc).sort((a, b) => b[1] - a[1])[0], top = [...c.mem.entries()].sort((a, b) => b[1].n - a[1].n)[0], wr = c.w / c.n;
-        return `<tr data-a="gchamp1" data-v="${esc(c.id)}"><td><div class="g-ch"><img src="${champImg(c.id)}" alt="">${esc(champName(c.id))}</div></td><td>${c.n}</td><td>${pct(c.pr)}</td>
+        return `<tr data-a="gchamp1" data-v="${esc(c.id)}"><td><div class="g-ch"><img src="${champImg(c.id)}" alt="">${esc(champName(c.id))}</div></td>
+          <td>${tierBadge(c.ts.tier)}<span class="sub g-ext" title="OP.GG 솔로랭크 티어">${c.ts.ext ? `OP.GG ${c.ts.ext}` : ''}</span></td><td>${c.n}</td><td>${pct(c.pr)}</td>
           <td><b class="${wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(wr)}</b></td><td>${((c.k + c.a) / Math.max(1, c.d)).toFixed(2)}</td><td>${c.sec ? (c.cs / (c.sec / 60)).toFixed(1) : '–'}</td>
           <td>${mp ? posLabel(mp[0]) : '–'}</td><td>${top ? `${esc(player(top[0])?.name || '?')} <span class="sub">${top[1].n}판</span>` : '–'}</td></tr>` }).join('')}</tbody></table></div></div>`;
 }
@@ -725,6 +788,8 @@ Object.assign(ACT, {
   gretry: () => GUP && gNext(),
   gview1: el => gViewGame(el.dataset.id),
   gplayer: el => gPlayerModal(Number(el.dataset.id)),
+  // 순위표: 넓은 화면은 옆 카드 갱신, 좁은 화면은 바로 상세 창
+  gsel: el => { const id = Number(el.dataset.id); if (innerWidth < 980) return gPlayerModal(id); GM.sel = id; const y = scrollY; render(); scrollTo(0, y) },
   grwedit: () => gRankWModal(),
   grwreset: () => { const w = DEF_RW; Object.keys(w).forEach(k => { const i = $('#rw_' + k); if (i) i.value = w[k] }) },
   grwsave: () => {
@@ -841,6 +906,22 @@ body.capture .subtabs{display:none}
 .g-det summary{cursor:pointer;margin-bottom:0}.g-det[open] summary{margin-bottom:12px}
 .g-rank tr[data-a]{cursor:pointer}
 .g-duo{display:flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line2);border-radius:10px;margin-bottom:6px}.g-duo .sub{flex:1}
+.g-lbwrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}
+@media (max-width:980px){.g-lbwrap{grid-template-columns:1fr}.g-side{display:none}}
+.g-lb.sel td{background:rgba(10,200,185,.08)}.g-lb.sel td:first-child{box-shadow:inset 3px 0 0 var(--teal)}
+.g-side{position:sticky;top:12px;border:1px solid var(--line);border-radius:16px;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015))}
+.g-sh{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.g-sh b{font-size:18px}
+.g-srank{text-align:right}.g-srank b{display:block;font-size:20px;color:var(--gold2)}.g-srank span{font-size:12px;color:var(--mut)}
+.g-stiles{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:12px 0 8px}.g-stiles div{background:var(--glass);border-radius:10px;padding:8px;text-align:center}
+.g-stiles b{display:block;font-size:17px}.g-stiles span{font-size:10.5px;color:var(--mut)}
+.g-skda{font-size:13px;color:var(--mut);text-align:center}.g-skda b{color:var(--txt)}
+.g-st{font-weight:900;font-size:13px;margin:14px 0 6px;color:var(--gold2)}
+.g-abil{display:grid;grid-template-columns:56px 1fr 62px;gap:8px;align-items:center;font-size:12px;margin:4px 0}.g-abil .g-bar{margin:0}
+.g-smost{display:flex;align-items:center;gap:8px;padding:4px 0}.g-smost img{width:30px;height:30px;border-radius:50%}.g-smost div{flex:1;display:flex;flex-direction:column}.g-smost b{font-size:13px}
+.g-sduo{display:flex;gap:6px;align-items:center;font-size:13px;padding:3px 0}.g-sduo .sub{flex:1}
+.g-tier{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 6px;border-radius:6px;font-weight:900;font-size:12px;color:#fff}
+.g-tier.t0{background:#e84057}.g-tier.t1{background:#0093ff}.g-tier.t2{background:#00bba3}.g-tier.t3{background:#ffb900;color:#2a2300}.g-tier.t4{background:#9aa4af;color:#111}.g-tier.t5{background:#a88a67}
+.g-ext{margin-left:6px;font-size:10.5px}
 .g-vtabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--line2)}
 .g-vtabs button{padding:10px 16px;font-weight:900;font-size:14px;color:var(--mut);border:0;background:none;border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer}
 .g-vtabs button.on{color:var(--txt);border-bottom-color:var(--teal)}
