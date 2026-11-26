@@ -17,7 +17,15 @@ const mSel = (attrs, cur, opts, ph) => `<select class="inp m-sel" ${attrs}><opti
 const M_LANES = () => G_POS.map(k => [k, mLane(k)]);
 
 function renderMembers() {
-  const A = isAdmin(), q = MEM.q.trim().toLowerCase(), v = PK[MEM.view] ? MEM.view : 'all';
+  const A = isAdmin(), unk = mUnknown(), tab = MEM.tab === 'unk' ? 'unk' : 'list';
+  V.innerHTML = `<div class="sec-head"><div><div class="h1">👥 멤버</div>
+    <div class="sub">롤가다 구성원 ${S.players.length}명 · 여기 등록된 멤버가 팀 뽑기·팀 대항전에 나와요 · ${A ? '티어·라인은 고르면 바로 저장돼요' : '티어·라인은 운영진이 설정해요'}</div></div>
+    ${A ? '<button class="btn pri" data-a="mnew">＋ 멤버 추가</button>' : ''}</div>
+  <div class="g-vtabs"><button class="${tab === 'list' ? 'on' : ''}" data-a="mtab" data-v="list">👥 멤버 목록</button><button class="${tab === 'unk' ? 'on' : ''}" data-a="mtab" data-v="unk">❔ 미등록 닉네임${unk.length ? ` <b class="m-cnt">${unk.length}</b>` : ''}</button></div>
+  ${tab === 'unk' ? mUnknownHTML(unk, A) : mListHTML(A)}`;
+}
+function mListHTML(A) {
+  const q = MEM.q.trim().toLowerCase(), v = PK[MEM.view] ? MEM.view : 'all';
   const tierI = p => MT[rosterOf(p.id).tier]?.i ?? 99, byTier = (a, b) => tierI(a) - tierI(b) || a.name.localeCompare(b.name, 'ko');
   const mainOf = p => rosterOf(p.id).main, laneN = k => S.players.filter(p => mainOf(p) === k).length;
   // 기본은 전체 멤버 티어순, 라인 탭은 그 라인이 주라인인 멤버만
@@ -27,15 +35,42 @@ function renderMembers() {
       <td>${A ? mSel(`data-c="mtier" data-id="${p.id}"`, r.tier, M_TIERS, '티어 미정') : mTierBadge(r.tier)}</td>
       <td>${A ? mSel(`data-c="mmain" data-id="${p.id}"`, r.main, M_LANES(), '미정') : (mLane(r.main) || '<span class="sub">미정</span>')}</td>
       <td>${A ? mSel(`data-c="msub" data-id="${p.id}"`, r.sub, M_LANES().filter(([k]) => k !== r.main), '없음') : (mLane(r.sub) || '<span class="sub">–</span>')}</td></tr>` };
-  const rows = list.map(row).join('');
-  V.innerHTML = `<div class="sec-head"><div><div class="h1">👥 멤버</div>
-    <div class="sub">롤가다 구성원 ${S.players.length}명 · 여기 등록된 멤버가 팀 뽑기·팀 대항전에 나와요 · ${A ? '티어·라인은 고르면 바로 저장돼요' : '티어·라인은 운영진이 설정해요'}</div></div>
-    ${A ? '<button class="btn pri" data-a="mnew">＋ 멤버 추가</button>' : ''}</div>
-  <div class="card"><div class="h2">📋 멤버 목록 <span class="sub">티어순</span>
+  return `<div class="card"><div class="h2">📋 멤버 목록 <span class="sub">티어순</span>
       <input class="inp mla" style="width:180px" data-i="mq" placeholder="🔍 닉네임 검색" value="${esc(MEM.q)}"></div>
     <div class="g-seg m-lanes">${[['all', `전체 <span class="sub">${S.players.length}</span>`], ...G_POS.map(k => [k, `${mLane(k)} <span class="sub">${laneN(k)}</span>`])].map(([k, n]) => `<button class="chip ${v === k ? 'on' : ''}" data-a="msort" data-v="${k}">${n}</button>`).join('')}</div>
     <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>주라인</th><th>부라인</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="4" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
+      <tbody>${list.map(row).join('') || `<tr><td colspan="4" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
+}
+
+// ❔ 미등록 닉네임: 멤버로 연결 안 된 게임 닉네임별 통계 (전 시즌·전 종류)
+function mUnknown() {
+  const by = new Map();
+  for (const g of GM.games) g.teams.forEach((t, ti) => t.players.forEach(p => {
+    if (!p.rid.trim() || linkOf(p.rid)) return;
+    const k = nkey(p.rid), s = by.get(k) || by.set(k, { rid: p.rid, n: 0, w: 0, k: 0, d: 0, a: 0, ch: {}, last: '', seasons: new Set() }).get(k);
+    s.n++; if (g.win === ti + 1) s.w++; s.k += p.k; s.d += p.d; s.a += p.a; s.ch[p.champ] = (s.ch[p.champ] || 0) + 1; if (g.date > s.last) s.last = g.date; s.seasons.add(g.season);
+  }));
+  return [...by.values()].sort((a, b) => b.last.localeCompare(a.last) || b.n - a.n);
+}
+function mUnknownHTML(unk, A) {
+  const memberSel = rid => `<select class="inp m-sel" data-c="glink" data-v="${esc(rid)}"><option value="">멤버 선택…</option><option value="guest">🎟 게스트 (랭킹 제외)</option>
+    ${[...S.players].sort(nameSort).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select>`;
+  const rows = unk.map(x => { const most = Object.entries(x.ch).sort((a, b) => b[1] - a[1]).slice(0, 3), sg = A ? gSuggest(x.rid) : [];
+    return `<tr><td class="g-nm"><b>${esc(x.rid)}</b><div class="sub">${[...x.seasons].sort((a, b) => a - b).map(seasonName).join(' · ')}</div></td>
+      <td>${x.n}</td><td><b class="${x.w / x.n >= 0.5 ? 'g-up' : 'g-dn'}">${pct(x.w / x.n)}</b></td><td>${((x.k + x.a) / Math.max(1, x.d)).toFixed(2)}</td>
+      <td class="g-mosts">${most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('')}</td>
+      <td class="sub">${x.last}</td>
+      ${A ? `<td><div class="m-merge">${sg.map(s => `<button class="btn sm pri" data-a="gmerge" data-v="${esc(x.rid)}" data-id="${s.id}" title="이름 유사도 ${Math.round(s.sim * 100)}% · 같은 경기에 함께 나온 적 없음">→ ${esc(player(s.id).name)}</button>`).join('')}${memberSel(x.rid)}</div></td>` : ''}</tr>` }).join('');
+  // 이미 연결된 닉네임 (운영진: 연결 끊기)
+  const byMember = new Map(); Object.values(GM.ids).forEach(v => { const k = String(v.mid); if (!byMember.has(k)) byMember.set(k, []); byMember.get(k).push(v.name) });
+  return `<div class="card"><div class="h2">❔ 미등록 닉네임 <span class="sub">멤버로 연결 안 된 게임 닉네임 ${unk.length}개 · 이 기록은 통계·순위에서 빠져 있어요 · 멤버를 고르면 지난 기록까지 그 멤버로 바로 합산돼요</span></div>
+    ${unk.length ? `<div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>판수</th><th>승률</th><th>KDA</th><th>주챔프</th><th>최근 경기</th>${A ? '<th>어떤 멤버인가요?</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+      ${A ? '' : '<div class="sub" style="margin-top:8px">누구인지 아시면 운영진에게 알려주세요 · 연결은 운영진이 해요</div>'}`
+    : '<div class="empty-note">✅ 모든 게임 닉네임이 멤버에 연결돼 있어요</div>'}
+    ${A ? `<details class="g-linked" style="margin-top:14px"><summary class="sub" style="cursor:pointer;font-weight:800">🔗 이미 연결된 닉네임 보기 (멤버 ${byMember.size}명)</summary>
+      <div class="g-ids" style="margin-top:10px">${[...byMember.entries()].sort((a, b) => (a[0] === 'guest') - (b[0] === 'guest')).map(([mid, xs]) => `<div class="g-idgrp"><b>${mid === 'guest' ? '🎟 게스트' : esc(player(+mid)?.name || '?')}</b>
+        <div>${xs.map(n => `<span class="g-alias">${esc(n)}<button class="g-x" data-a="gunlink" data-v="${esc(n)}" title="연결 끊기">✕</button></span>`).join('')}</div></div>`).join('')}</div></details>` : ''}
+  </div>`;
 }
 
 // 🏠 홈: 포지션 수급 현황 (멤버 탭의 주라인·부라인 기준)
@@ -81,7 +116,7 @@ async function mNewSave() {
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
 }
 Object.assign(CHG, { mtier: el => mSave(el, 'tier'), mmain: el => mSave(el, 'main'), msub: el => mSave(el, 'sub') });
-Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mnew: mNewModal, mnsave: mNewSave });
+Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: mNewModal, mnsave: mNewSave });
 Object.assign(INP, { mq: el => { MEM.q = el.value; const pos = el.selectionStart; render(); const n = $('[data-i="mq"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) {} } } });
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
@@ -90,4 +125,6 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .m-tbl td{vertical-align:middle}
 .sup{grid-template-columns:72px 1fr 92px}
 .m-lanes{margin:0 0 10px;flex-wrap:wrap}
+.m-cnt{display:inline-block;min-width:18px;padding:0 5px;border-radius:99px;background:var(--pink,#ff5d8f);color:#fff;font-size:11px;margin-left:4px}
+.m-merge{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 ` }));

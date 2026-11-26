@@ -974,9 +974,7 @@ function renderHeader(){
   const st=L.sync?UI.sync:'off';
   const dotC={wait:'wait',live:'live',err:'err'}[st]||'';
   const txt=L.sync?{off:'공유 대기',wait:'연결 중…',live:'실시간 공유',err:'공유 연결 실패'}[st]:'로컬 저장';
-  $('#hdrR').innerHTML=`<a class="pill njl" href="${NJ_URL}" target="_blank" rel="noopener" title="내전롤 홈페이지">🔗 <span class="lbtxt">내전롤</span></a>
-    <button class="pill njc" data-a="copy" data-v="${NJ_CODE}" title="눌러서 초대코드 복사">🎟️ <span class="lbtxt2">초대코드</span> <b>${NJ_CODE}</b></button>
-    <button class="pill" data-a="tab" data-v="settings" title="저장 방식"><span class="dot ${dotC}"></span><span class="lbtxt">${txt}</span></button>
+  $('#hdrR').innerHTML=`<button class="pill" data-a="tab" data-v="settings" title="저장 방식"><span class="dot ${dotC}"></span><span class="lbtxt">${txt}</span></button>
     ${isAdmin()?`<button class="pill" data-a="lockadmin" style="color:var(--gold2)" title="로그아웃">🛠 <span class="lbtxt">운영진</span></button>`
       :`<button class="pill" data-a="unlock" style="color:var(--amber)">🔐 <span class="lbtxt">운영진 로그인</span></button>`}`;
   const rb=$('#robar'),showRB=!isAdmin()&&!['home','sheet','casual','records','stats','draft'].includes(UI.tab);
@@ -1066,7 +1064,9 @@ function renderHome(){
 }
 
 /* ===== 멤버 ===== */
+// 명단표 옆: 내전롤 리더보드 이미지 대신 우리 통계 순위표 (games.js gBoardHTML)
 function boardCard(){
+  if(typeof gBoardHTML==='function')return gBoardHTML();
   const A=canEdit(),open=UI.boardOpen!==false;
   const when=B.at?new Date(B.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
   return`<div class="card board"><div class="h2">🏆 내전롤 시즌 리더보드 <span class="sub">${esc(B.note)}${B.note&&when?' · ':''}${when?'업데이트 '+when:''}</span>
@@ -1250,7 +1250,7 @@ function sheetHTML(){
 function renderSheet(){
   V.innerHTML=`
   <div class="sec-head"><div><div class="h1">📋 한눈에 명단표</div>
-    <div class="sub">카톡 공지방용 — <b style="color:var(--txt)">🖼 이미지로 저장</b>이 제일 깔끔하고, 폰은 <b style="color:var(--txt)">캡쳐 모드</b>로 화면 맞춰 캡쳐해도 OK · 오른쪽(모바일은 아래)에 내전롤 시즌 리더보드</div></div></div>
+    <div class="sub">카톡 공지방용 — <b style="color:var(--txt)">🖼 이미지로 저장</b>이 제일 깔끔하고, 폰은 <b style="color:var(--txt)">캡쳐 모드</b>로 화면 맞춰 캡쳐해도 OK · 오른쪽(모바일은 아래)에 일반 내전 시즌 순위</div></div></div>
   <div class="card toolbar ctrlbar">
     <div class="ctl row gap"><span class="sub" style="font-weight:800">정렬</span><div class="seg">${Object.entries(SORT_L).map(([k,n])=>`<button class="${UI.ls.sort===k?'on':''}" data-a="lsort" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="ctl row gap"><span class="sub" style="font-weight:800">범위</span><div class="seg">${[['all','전체'],['active','출전자만']].map(([k,n])=>`<button class="${UI.ls.only===k?'on':''}" data-a="lonly" data-v="${k}">${n}</button>`).join('')}</div></div>
@@ -1788,11 +1788,6 @@ function renderRules(){
     </div>
     <div class="card full"><div class="h2">📮 신고 & 처리${EB('report')}</div>
       <ul class="rl" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">${rlItems(R.report.items)}</ul>
-    </div>
-    <div class="card full"><div class="h2">🔗 내전롤 링크</div>
-      <div class="linkrow"><span class="lk-l">홈페이지</span><a href="https://naejeon.lol/main" target="_blank" rel="noopener">https://naejeon.lol/main</a><button class="btn sm" data-a="copy" data-v="https://naejeon.lol/main">복사</button></div>
-      <div class="linkrow"><span class="lk-l">초대링크</span><a href="https://naejeon.lol/?invite=bbc2795c" target="_blank" rel="noopener">https://naejeon.lol/?invite=bbc2795c</a><button class="btn sm" data-a="copy" data-v="https://naejeon.lol/?invite=bbc2795c">복사</button></div>
-      <div class="linkrow"><span class="lk-l">초대코드</span><code class="kbd">bbc2795c</code><button class="btn sm" data-a="copy" data-v="bbc2795c">복사</button></div>
     </div>
   </div>`;
 }
@@ -2531,11 +2526,6 @@ $('#vidf').addEventListener('change',e=>{const f=e.target.files[0];e.target.valu
   tv.onloadeddata=()=>{if(VUP&&VUP.file===f){VUP.dur=tv.duration;VUP.canRaw=f.size<=24*1048576&&tv.videoWidth>0&&/mp4|webm/.test(f.type);if(VUP.step==='ready')videoModal()}URL.revokeObjectURL(tv.src)};
   tv.onerror=()=>URL.revokeObjectURL(tv.src);videoModal()});
 $('#recf').addEventListener('change',e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)openRecUpload(fs)});
-document.addEventListener('paste',e=>{
-  if(UI.tab!=='sheet'||!canEdit()||!M.classList.contains('hidden'))return;
-  const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith('image/'));
-  if(it){e.preventDefault();handleBoardFile(it.getAsFile())}
-});
 document.addEventListener('dragover',e=>{const z=e.target.closest?.('#boardDrop');if(z&&canEdit()&&e.dataTransfer?.types?.includes('Files')){e.preventDefault();z.classList.add('over')}});
 document.addEventListener('dragleave',e=>{const z=e.target.closest?.('#boardDrop');if(z)z.classList.remove('over')});
 document.addEventListener('drop',e=>{const z=e.target.closest?.('#boardDrop');if(!z||!e.dataTransfer?.files?.length)return;e.preventDefault();z.classList.remove('over');handleBoardFile(e.dataTransfer.files[0])});

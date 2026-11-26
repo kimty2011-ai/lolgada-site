@@ -151,7 +151,7 @@ async function gApi(body) {
   if (d && d.limit != null) GM.quota = { used: d.used, limit: d.limit };
   return d;
 }
-const gTabOpen = () => ['home', 'stats', 'records', 'members'].includes(UI.tab) && M.classList.contains('hidden');
+const gTabOpen = () => ['home', 'stats', 'records', 'members', 'sheet'].includes(UI.tab) && M.classList.contains('hidden');
 const refreshQuota =() => gApi({ action: 'status' }).then(() => gTabOpen() && render()).catch(() => {});
 
 /* ---------- Firestore ---------- */
@@ -524,7 +524,7 @@ function gRankHTML(games, st, need, w, pos) {
     <div class="g-lbwrap"><div class="g-scroll g-lbmain"><table class="g-tbl g-rank g-lbt"><thead><tr><th>#</th><th>멤버</th><th>게임</th><th>K / D / A</th><th>KDA</th><th>승률</th><th>점수</th></tr></thead>
       <tbody>${st.ranked.map((s, i) => rankRow(s, i)).join('')}${st.rest.map(s => rankRow(s, null)).join('')}</tbody></table></div>
       ${selId != null ? gSidePanel(games, st, pos, selId, need) : ''}</div>
-    ${st.unknown.length || st.guests || st.blanks ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''}${st.blanks ? ` · 이름 없는 기록 ${st.blanks}칸` : ''} — 통계에서 빠져 있어요${A ? ' · 아래 [닉네임 합치기]에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
+    ${st.unknown.length || st.guests || st.blanks ? `<div class="sub" style="margin-top:10px">❔ 멤버 연결 안 된 게임 ID ${st.unknown.length}개${st.guests ? ` · 🎟 게스트 ${st.guests}회` : ''}${st.blanks ? ` · 이름 없는 기록 ${st.blanks}칸` : ''} — 통계에서 빠져 있어요${A ? ' · 👥 멤버 → ❔ 미등록 닉네임에서 연결하면 과거 기록까지 바로 반영돼요' : ' · 운영진이 연결하면 자동 반영돼요'}</div>` : ''}
   </div>
   ${pos === 'ALL' ? `<div class="card"><div class="h2">🎖️ 부문별 1위 <span class="sub">승률·분당 기록은 ${need ? `${need}판 이상` : '참여한'} 멤버 중 · 누적 기록은 전원</span></div>
     <div class="g-awards">${awards || '<div class="empty-note">아직 기록이 부족해요</div>'}</div></div>` : ''}`;
@@ -754,23 +754,10 @@ function gSuggest(rid) {
     return { id: m.id, sim };
   }).filter(x => x.sim >= 0.5).sort((a, b) => b.sim - a.sim).slice(0, 2);
 }
+// 통계 탭 아래 운영진 설정 (닉네임 합치기는 👥 멤버 → ❔ 미등록 닉네임으로 옮김)
 function gAdminHTML() {
-  const rids = new Map(); GM.games.forEach(g => g.teams.forEach(t => t.players.forEach(p => { if (!p.rid) return; const k = nkey(p.rid); if (!rids.has(k)) rids.set(k, { rid: p.rid, n: 0 }); rids.get(k).n++ })));
-  Object.values(GM.ids).forEach(v => { const k = nkey(v.name); if (!rids.has(k)) rids.set(k, { rid: v.name, n: 0 }) });
-  const unknown = [...rids.values()].filter(x => !linkOf(x.rid)).sort((a, b) => b.n - a.n);
-  const byMember = new Map(); [...rids.values()].forEach(x => { const l = linkOf(x.rid); if (!l) return; const k = String(l.mid); if (!byMember.has(k)) byMember.set(k, []); byMember.get(k).push(x) });
-  const memberSel = (rid, cur) => `<select class="inp" data-c="glink" data-v="${esc(rid)}"><option value="">❔ unknown</option><option value="guest" ${cur === 'guest' ? 'selected' : ''}>🎟 게스트</option>
-    ${[...S.players].sort(nameSort).map(m => `<option value="${m.id}" ${cur === String(m.id) ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>`;
   const q = GM.quota;
-  return `<div class="card"><div class="h2">🔀 운영진 · 닉네임 합치기 <span class="sub">부캐·잘못 인식된 닉네임을 기존 멤버에 합치면 과거 기록까지 그 멤버 통계로 바로 합산돼요</span></div>
-    ${unknown.length ? `<div class="g-merge">${unknown.map(x => { const sg = gSuggest(x.rid);
-      return `<div class="g-mrow"><div class="g-mname"><b>${esc(x.rid)}</b><span class="sub">${x.n}판 · 멤버 연결 안 됨</span></div>
-        <div class="g-msug">${sg.map(s => `<button class="btn sm pri" data-a="gmerge" data-v="${esc(x.rid)}" data-id="${s.id}" title="이름 유사도 ${Math.round(s.sim * 100)}% · 같은 경기에 함께 나온 적 없음">→ ${esc(player(s.id).name)}에 합치기</button>`).join('') || '<span class="sub">비슷한 멤버 없음 · 직접 고르기 →</span>'}</div>
-        ${memberSel(x.rid, '')}</div>` }).join('')}</div>` : '<div class="empty-note">✅ 모든 닉네임이 멤버에 연결돼 있어요</div>'}
-    <details class="g-linked" style="margin-top:14px"><summary class="sub" style="cursor:pointer;font-weight:800">🔗 연결된 닉네임 보기 (멤버 ${byMember.size}명)</summary>
-      <div class="g-ids" style="margin-top:10px">${[...byMember.entries()].sort((a, b) => (a[0] === 'guest' ? 1 : 0) - (b[0] === 'guest' ? 1 : 0)).map(([mid, xs]) => `<div class="g-idgrp"><b>${mid === 'guest' ? '🎟 게스트' : esc(player(+mid)?.name || '?')}</b>
-        <div>${xs.map(x => `<span class="g-alias">${esc(x.rid)} <span class="sub">${x.n}판</span><button class="g-x" data-a="gunlink" data-v="${esc(x.rid)}" title="연결 끊기">✕</button></span>`).join('')}</div></div>`).join('')}</div></details>
-    <div class="h2" style="margin-top:18px">📏 하루 업로드 한도 <span class="sub">한국 시간 자정에 초기화 · 운영진 업로드는 한도에서 빠져요</span></div>
+  return `<div class="card"><div class="h2">📏 운영진 · 하루 업로드 한도 <span class="sub">한국 시간 자정에 초기화 · 운영진 업로드는 한도에서 빠져요</span></div>
     <div class="row gap"><input class="inp num" type="number" min="0" max="500" id="gLimit" value="${q && !q.pending ? q.limit : ''}" style="width:90px"><span>장 / 하루</span><button class="btn sm gold" data-a="glimit">저장</button>${q && !q.pending ? `<span class="sub">오늘 ${q.used}장 사용</span>` : ''}</div>
   </div>`;
 }
@@ -826,6 +813,7 @@ Object.assign(CHG, {
   glink: el => gSetLink(el.dataset.v, el.value),
   gseason: el => { GM.season = el.value === 'all' ? 'all' : +el.value; render() },
   grseason: el => { GM.rseason = el.value === 'all' ? 'all' : +el.value; render() },
+  gbseason: el => { GM.bseason = +el.value; render() },
 });
 // 검색창: 입력 중 포커스를 잃지 않게 목록만 다시 그림
 Object.assign(INP, {
@@ -902,6 +890,21 @@ function gHomeHTML() {
       <div class="g-awards h-aw">${awH(dayMvp ? { ...dayMvp, n: '그날 MVP' } : null)}${bestK ? awH({ e: '🗡️', n: '한 판 최다 킬', who: nm(bestK.m), val: `${bestK.k}킬 (${bestK.k}/${bestK.d}/${bestK.a})`, sub: esc(champName(bestK.champ)) }) : ''}</div>
       <button class="btn sm" style="margin-top:10px" data-a="tab" data-v="records">📜 그날 기록 보기 ›</button></div>
   </div>`;
+}
+
+/* ---------- 📋 명단표 옆: 일반 내전 시즌 순위 (예전 내전롤 리더보드 자리) ---------- */
+// 기본은 이번 시즌, 이번 시즌 기록이 아직 없으면 직전 시즌 (예: 12월 초엔 시즌 4 최종 순위)
+const gBoardSeason = () => GM.bseason || (GM.games.some(g => g.season === curSeason() && g.type === 'casual') ? curSeason() : curSeason() - 1);
+function gBoardHTML() {
+  const bs = gBoardSeason(), games = GM.games.filter(g => g.season === bs && g.type === 'casual');
+  const need = exposeNeed(games.length) || 0, st = gRanked(games, need, rankW());
+  const opts = gSeasonList().map(n => `<option value="${n}" ${n === bs ? 'selected' : ''}>${seasonName(n)}${n === curSeason() ? ' · 이번 시즌' : ''}</option>`).join('');
+  const row = (s, i) => `<tr class="${i == null ? 'g-unranked' : ''}"><td class="g-rk">${i == null ? `<span class="sub">${need - s.n}판 더</span>` : i + 1}</td><td class="g-nm">${esc(player(s.id)?.name || '?')}</td><td>${s.n}</td><td><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b></td><td>${s.kda.toFixed(2)}</td><td class="g-score">${s.score.toFixed(1)}</td></tr>`;
+  return `<div class="card board"><div class="h2">🏆 일반 내전 순위 <select class="inp mla" style="width:auto;padding:4px 8px" data-c="gbseason">${opts}</select></div>
+    <div class="sub" style="margin:-4px 0 8px">${games.length}판 · ${need ? `${need}판 이상만 순위` : '전원 순위'} · 📊 통계 탭과 같은 점수</div>
+    ${!GM.got ? '<div class="empty-note">⏳ 불러오는 중…</div>' : !games.length ? `<div class="empty-note">${seasonName(bs)} 일반 내전 기록이 아직 없어요</div>`
+    : `<div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>#</th><th>멤버</th><th>판</th><th>승률</th><th>KDA</th><th>점수</th></tr></thead>
+      <tbody>${st.ranked.map((s, i) => row(s, i)).join('')}${st.rest.map(s => row(s, null)).join('')}</tbody></table></div>`}</div>`;
 }
 
 /* ---------- 스타일 ---------- */
