@@ -504,7 +504,7 @@ function gRankHTML(games, st, need, w, pos) {
   const rankRow = (s, i) => { const m = player(s.id), p = prev.get(s.id), mv = i == null || !p ? '' : p > i + 1 ? `<span class="g-up">↑${p - i - 1}</span>` : p < i + 1 ? `<span class="g-dn2">↓${i + 1 - p}</span>` : '';
     return `<tr class="g-lb ${i == null ? 'g-unranked' : ''} ${i === 0 ? 'top1' : ''} ${s.id === selId ? 'sel' : ''}" data-a="gsel" data-id="${s.id}">
       <td class="g-rk">${i == null ? `<span class="sub" title="최소 ${need}판부터 순위">${need - s.n}판 더</span>` : `${i + 1}${mv ? `<div class="g-mv">${mv}</div>` : ''}`}</td>
-      <td class="g-nm">${m ? nmH(m) : '?'}${s.mainPos ? ` <span class="g-pos-t">${posLabel(s.mainPos)}</span>` : ''}</td><td>${s.n}</td>
+      <td class="g-nm">${m ? esc(m.name) : '?'}${s.mainPos ? ` <span class="g-pos-t">${posLabel(s.mainPos)}</span>` : ''}</td><td>${s.n}</td>
       <td class="g-kda3">${(s.k / s.n).toFixed(1)} / ${(s.d / s.n).toFixed(1)} / ${(s.a / s.n).toFixed(1)}</td>
       <td><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b>${bar(s.kda, maxKda, 'k')}</td>
       <td><b class="${s.wr >= 0.5 ? 'g-up' : 'g-dn'}">${pct(s.wr)}</b>${bar(s.wr, 1, 'w')}</td>
@@ -567,15 +567,17 @@ function gPlayersHTML(games, st, need) {
   const q = (GM.pq || '').trim().toLowerCase();
   const list = [...st.rows].filter(s => !q || (player(s.id)?.name || '').toLowerCase().includes(q)).sort((a, b) => b.n - a.n);
   const rankOf = new Map(st.ranked.map((s, i) => [s.id, i + 1]));
-  const col = G_COLS.find(c => c.k === GM.sort) || G_COLS[3];
+  // 순위 정렬: 순위권 먼저(1위부터), 순위 밖은 판수 많은 순
+  const rankCol = { k: 'rank', h: '순위', v: s => -(rankOf.get(s.id) || 1e4) };
+  const col = [rankCol, ...G_COLS].find(c => c.k === GM.sort) || G_COLS[3];
   const detail = [...st.rows].filter(s => !q || (player(s.id)?.name || '').toLowerCase().includes(q)).sort((a, b) => GM.dir * (col.v(a) - col.v(b)) || b.n - a.n);
   const th = c => `<th class="g-sort ${GM.sort === c.k ? 'on' : ''}" data-a="gsort" data-v="${c.k}">${c.h}${GM.sort === c.k ? (GM.dir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
   const formH = s => s.recent.map(x => `<i class="g-form ${x ? 'w' : 'l'}">${x ? '승' : '패'}</i>`).join('');
   const mostH = s => s.most.map(([id, c]) => `<span class="g-most" title="${esc(champName(id))} ${c}판"><img src="${champImg(id)}" alt="">${c > 1 ? `<i>${c}</i>` : ''}</span>`).join('');
   return `<div class="card"><div class="h2">👤 선수 통계 <span class="sub">${st.rows.length}명 · 열 제목을 누르면 정렬 · 이름을 누르면 상세</span>
       <input class="inp mla" style="width:180px" data-i="gpq" placeholder="🔍 멤버 검색" value="${esc(GM.pq || '')}"></div>
-    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr><th>순위</th><th>멤버</th><th>포지션</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
-      <tbody>${detail.map(s => { const m = player(s.id), r = rankOf.get(s.id); return `<tr class="${r ? '' : 'g-unranked'}" data-a="gplayer" data-id="${s.id}"><td class="g-rk">${r || `<span class="sub">${need - s.n}판 더</span>`}</td><td class="g-nm">${m ? nmH(m) : '?'}</td><td class="sub">${s.mainPos ? posLabel(s.mainPos) : '–'}</td>
+    <div class="g-scroll"><table class="g-tbl g-rank"><thead><tr>${th(rankCol)}<th>멤버</th><th>포지션</th>${G_COLS.map(th).join('')}<th>최근 5판</th><th>모스트</th></tr></thead>
+      <tbody>${detail.map(s => { const m = player(s.id), r = rankOf.get(s.id); return `<tr class="${r ? '' : 'g-unranked'}" data-a="gplayer" data-id="${s.id}"><td class="g-rk">${r || `<span class="sub">${need - s.n}판 더</span>`}</td><td class="g-nm">${m ? esc(m.name) : '?'}</td><td class="sub">${s.mainPos ? posLabel(s.mainPos) : '–'}</td>
         ${G_COLS.map(c => `<td>${c.f(s)}</td>`).join('')}<td class="g-forms">${formH(s)}</td><td class="g-mosts">${mostH(s)}</td></tr>` }).join('') || '<tr><td colspan="14" class="empty-note">검색 결과가 없어요</td></tr>'}</tbody></table></div></div>`;
 }
 /* ----- 챔피언 티어 (우리 내전 기준) -----
@@ -664,7 +666,7 @@ function gPlayerModal(mid) {
   const duos = [...duo.entries()].filter(([, d]) => d.n >= 3).map(([id, d]) => ({ id, ...d, wr: d.w / d.n }));
   const best = [...duos].sort((a, b) => b.wr - a.wr || b.n - a.n).slice(0, 3), worst = [...duos].sort((a, b) => a.wr - b.wr || b.n - a.n).slice(0, 2);
   const duoH = d => `<div class="g-duo"><b>${esc(player(d.id)?.name || '?')}</b><span class="sub">${d.n}게임 함께</span><b class="${d.wr >= 0.5 ? 'g-up' : 'g-dn2'}">${pct(d.wr)}</b></div>`;
-  modal(`<div class="mh">${nmH(m)} <span class="sub">${seasonName(gSeasonSel())} · ${rank >= 0 ? `종합 ${rank + 1}위 · ${s.score.toFixed(1)}점` : `${need - s.n}판 더 하면 순위 진입`}</span></div>
+  modal(`<div class="mh">${esc(m.name)} <span class="sub">${seasonName(gSeasonSel())} · ${rank >= 0 ? `종합 ${rank + 1}위 · ${s.score.toFixed(1)}점` : `${need - s.n}판 더 하면 순위 진입`}</span></div>
     <div class="g-hl" style="margin:12px 0">
       <div class="g-hlc"><b>${s.n}</b><span>게임</span></div><div class="g-hlc"><b>${s.perfect ? 'Perfect' : s.kda.toFixed(2)}</b><span>KDA</span></div>
       <div class="g-hlc"><b>${pct(s.wr)}</b><span>승률 · ${s.w}승 ${s.l}패</span></div><div class="g-hlc"><b>${s.csm.toFixed(1)}</b><span>CS/분</span></div></div>

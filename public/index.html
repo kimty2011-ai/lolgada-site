@@ -123,6 +123,11 @@ select.inp option{background:#0b1424}
 .stat .v small{font-size:14px;color:var(--mut);font-weight:800;margin-left:3px}
 .stat .e{position:absolute;right:12px;top:10px;font-size:26px;opacity:.85}
 .home-grid{display:grid;grid-template-columns:1.25fr 1fr;gap:14px}
+.r-ops .r-t,.r-team .r-o{display:none}
+.brd-p{border:1px solid var(--line2);border-radius:14px;padding:12px 14px;margin-top:8px;background:var(--panel2)}
+.brd-p summary{cursor:pointer;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;list-style:none}.brd-p summary::-webkit-details-marker{display:none}
+.brd-p summary b{font-size:15px}.brd-p summary .sub{margin-left:auto}
+.brd-b{white-space:pre-wrap;word-break:break-word;margin-top:10px;line-height:1.6}
 .stats.h-stats{grid-template-columns:repeat(4,1fr);gap:14px;margin:14px 0}
 .h-stats+.card{margin-bottom:14px}
 .h-stats~.home-grid{grid-template-columns:1fr 1fr}
@@ -1755,11 +1760,15 @@ function exposeNeed(g){if(!Number.isFinite(g))return null;const r=[...S.rules.ex
 function renderRules(){
   const R=S.rules,g=parseInt(UI.games,10),need=exposeNeed(g);
   const nR=R.expose.rows.length,nA=R.award.rows.length,nS=R.manner.steps.length;
-  V.innerHTML=`
-  <div class="sec-head"><div><div class="h1">📢 ${esc(S.meta.name)} 내전 공지</div><div class="sub">숙지하고 매너 있고 즐거운 내전 ㄱㄱ · 팀은 참여 인원 안에서 최대한 공정하게!</div></div>
-    ${canEdit()?'<button class="btn" data-a="tab" data-v="cfg">🧮 점수 기준 수정</button>':''}</div>
-  <div class="rules">
-    <div class="card full"><div class="h2">🧮 팀대항전 점수 편성 기준 <span class="tag t-pink">추가공지</span></div>
+  const rt=['ops','team','board'].includes(UI.rtab)?UI.rtab:'ops';
+  const head=`<div class="sec-head"><div><div class="h1">📢 ${esc(S.meta.name)} 내전 공지</div><div class="sub">숙지하고 매너 있고 즐거운 내전 ㄱㄱ · 팀은 참여 인원 안에서 최대한 공정하게!</div></div>
+    ${rt==='team'&&canEdit()?'<button class="btn" data-a="tab" data-v="cfg">🧮 점수 기준 수정</button>':''}</div>
+  <div class="g-vtabs">${[['ops','📋 운영 수칙'],['team','🏆 팀 대항전'],['board','💬 게시판']].map(([k,n])=>`<button class="${rt===k?'on':''}" data-a="rtab" data-v="${k}">${n}</button>`).join('')}</div>`;
+  if(rt==='board'){V.innerHTML=head+brdHTML();brdSync();return}
+  // 운영 수칙: 개요 · 매너 · 신고 / 팀 대항전: 점수 편성 · 랭킹 · 노출 · 포상
+  V.innerHTML=head+`
+  <div class="rules ${rt==='ops'?'r-ops':'r-team'}">
+    <div class="card full r-t"><div class="h2">🧮 팀대항전 점수 편성 기준 <span class="tag t-pink">추가공지</span></div>
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
         <div><table class="ttable"><thead><tr><th>티어 구간</th><th style="text-align:right">점수</th></tr></thead><tbody>
           ${S.tiers.map(t=>`<tr><td>${esc(t.n)}</td><td class="s">${t.s}</td></tr>`).join('')}</tbody></table></div>
@@ -1771,22 +1780,22 @@ function renderRules(){
       </div>
       <div class="note">기본점수 = 티어점수 + 조정 항목. 라인 보정이 더해져 실제 출전 점수는 달라질 수 있어요.</div>
     </div>
-    <div class="card"><div class="h2">📌 개요</div><ul class="rl">
+    <div class="card r-o"><div class="h2">📌 개요</div><ul class="rl">
       <li><span class="ic">📅</span><div><b>진행 기간</b><p>${fmtD(S.meta.start)} ~ ${fmtD(S.meta.end)}</p></div></li>
       <li><span class="ic">🤝</span><div><b>진행 취지</b><p>멤버 간 친목 도모 · 활발한 내전 환경 조성 · 실력 향상</p></div></li>
       <li><span class="ic">🙌</span><div><b>참가 자격</b><p>롤가다 공식 단톡방 참여자만 순위 경쟁 포함 · 시즌 중간 합류도 바로 참여 OK</p></div></li>
     </ul></div>
-    <div class="card"><div class="h2">📊 랭킹 & 점수 산정${EB('rank')}</div><ul class="rl">${rlItems(R.rank.items)||'<li class="sub">항목 없음</li>'}</ul></div>
-    <div class="card"><div class="h2">👀 순위 노출 조건${EB('expose')}</div>
+    <div class="card r-t"><div class="h2">📊 랭킹 & 점수 산정${EB('rank')}</div><ul class="rl">${rlItems(R.rank.items)||'<li class="sub">항목 없음</li>'}</ul></div>
+    <div class="card r-t"><div class="h2">👀 순위 노출 조건${EB('expose')}</div>
       <div class="ladder" style="grid-template-columns:repeat(${Math.max(1,Math.min(nR,4))},1fr)">${R.expose.rows.map(r=>`<div class="lad ${need===r.need?'on':''}" data-need="${r.need}"><b>${r.need}판↑</b><span>${esc(r.d)}</span></div>`).join('')}</div>
       <div class="calc"><span style="font-weight:800">🧮 계산기 · 지금 총 판수</span><input class="inp num" type="number" min="0" data-i="games" value="${esc(UI.games)}" placeholder="0"><span id="calcOut" style="font-weight:900;color:var(--teal2)">${need?`→ 최소 ${need}판 참여해야 순위 노출!`:'판수를 입력해보세요'}</span></div>
       ${R.expose.note?`<div class="note">${esc(R.expose.note)}</div>`:''}
     </div>
-    <div class="card"><div class="h2">🏅 시즌 포상${EB('award')}</div>
+    <div class="card r-t"><div class="h2">🏅 시즌 포상${EB('award')}</div>
       <div class="awards" style="grid-template-columns:repeat(${Math.max(1,Math.min(nA,3))},1fr)">${R.award.rows.map((r,i)=>`<div class="aw ${i===0?'g':''}"><div class="m">${esc(r.m)}</div><b>${esc(r.t)}</b><span class="sub">${esc(r.d)}</span></div>`).join('')}</div>
       ${R.award.note?`<div class="note">${esc(R.award.note)}</div>`:''}
     </div>
-    <div class="card full"><div class="h2">🚨 매너 규정 & 제재${EB('manner')}</div>
+    <div class="card full r-o"><div class="h2">🚨 매너 규정 & 제재${EB('manner')}</div>
       ${R.manner.intro?`<div class="note" style="margin:0 0 12px">${esc(R.manner.intro)}</div>`:''}
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
         <div><div class="h3" style="margin-bottom:8px"><span class="tag t-amber">일반 위반 → 경고</span></div><ul class="rl">${rlItems(R.manner.general)}</ul></div>
@@ -1795,10 +1804,27 @@ function renderRules(){
       <div class="h3" style="margin:16px 0 8px">⚖️ 제재 단계 <span class="sub">${esc(R.manner.stepNote)}</span></div>
       <div class="steps" style="grid-template-columns:repeat(${Math.max(1,Math.min(nS,4))},1fr)">${R.manner.steps.map((x,i)=>`<div class="stp s${Math.min(3,Math.round((i+1)/nS*3))}"><b>${esc(x.t)}</b><span>${esc(x.d)}</span></div>`).join('')}</div>
     </div>
-    <div class="card full"><div class="h2">📮 신고 & 처리${EB('report')}</div>
+    <div class="card full r-o"><div class="h2">📮 신고 & 처리${EB('report')}</div>
       <ul class="rl" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">${rlItems(R.report.items)}</ul>
     </div>
   </div>`;
+}
+/* ===== 💬 게시판 (누구나 글쓰기 · 삭제는 쓴 브라우저 또는 운영진) ===== */
+const BRD={posts:[],got:false,err:false,unsub:null};
+const brdCol=()=>fb.fs.collection(fb.db,'lolgadaCenter',location.hostname==='localhost'||location.hostname==='127.0.0.1'?'notice_board_dev':'notice_board','posts');
+// shortcut: 작성자 확인은 브라우저 저장 키로만 해요 (로그인이 없어서), 악용되면 서버 규칙·로그인 필요
+function brdMe(){try{let k=localStorage.getItem('lolgada.brd.me');if(!k){k=Math.random().toString(36).slice(2)+Date.now().toString(36);localStorage.setItem('lolgada.brd.me',k)}return k}catch(e){return CLIENT}}
+function brdSync(){
+  if(BRD.unsub||!fb||!fb.fs)return;const fs=fb.fs;
+  BRD.unsub=fs.onSnapshot(fs.query(brdCol(),fs.orderBy('at','desc'),fs.limit(100)),s=>{BRD.posts=s.docs.map(d=>({id:d.id,...d.data()}));BRD.got=true;BRD.err=false;if(UI.tab==='rules'&&UI.rtab==='board'&&M.classList.contains('hidden'))render()},
+    e=>{console.error('board sync',e);BRD.err=true;BRD.unsub=null;if(UI.tab==='rules')render()});
+}
+function brdHTML(){
+  const me=brdMe(),A=isAdmin();
+  const body=!fb||!fb.fs?'<div class="empty-note">🔌 서버에 연결되면 게시판이 보여요</div>':BRD.err?'<div class="empty-note">⚠️ 게시판을 불러오지 못했어요 · 새로고침 해보세요</div>':!BRD.got?'<div class="empty-note">⏳ 불러오는 중…</div>'
+    :BRD.posts.map(p=>`<details class="brd-p"><summary><b>${esc(p.t)}</b><span class="sub">${esc(p.by||'익명')} · ${new Date(+p.at||0).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span></summary>
+      <div class="brd-b">${esc(p.b)}</div>${A||p.me===me?`<div class="row" style="margin-top:10px"><button class="btn sm danger mla" data-a="bdel" data-id="${esc(p.id)}">🗑 삭제</button></div>`:''}</details>`).join('')||'<div class="empty-note">📭 아직 글이 없어요 · 첫 글을 남겨보세요</div>';
+  return `<div class="card"><div class="h2">💬 게시판 <span class="sub">누구나 글쓰기 · 최근 100개 · 제목을 누르면 내용</span><button class="btn pri sm mla" data-a="bnew" ${fb&&fb.fs?'':'disabled'}>✏️ 글쓰기</button></div>${body}</div>`;
 }
 const EF=[['e','이모지','emo'],['t','제목','grow'],['d','설명','long']];
 const RSCHEMA={
@@ -2470,6 +2496,19 @@ const ACT={
     try{await fb.fs.setDoc(fb.fs.doc(fb.db,...FB_DOC_R),{items});fb.fs.deleteDoc(fb.fs.doc(fb.db,FB_DOC_R[0],FB_DOC_R[1],'items',id)).catch(()=>{});REC.items=items;REC.cache.delete(id);render();toast('삭제했어요')}catch(e){toast('삭제 실패','err')}},'삭제')},
   // 모달
   mclose:()=>closeModal(),
+  rtab:el=>{UI.rtab=el.dataset.v;render()},
+  bnew:()=>{let nm='';try{nm=localStorage.getItem('lolgada.brd.name')||''}catch(e){}
+    modal(`<div class="mh">✏️ 게시판 글쓰기</div>
+      <label class="fl">닉네임</label><input class="inp" style="width:100%" id="bN" maxlength="20" value="${esc(nm)}" placeholder="닉네임">
+      <label class="fl">제목</label><input class="inp" style="width:100%" id="bT" maxlength="60" placeholder="제목">
+      <label class="fl">내용</label><textarea class="inp" style="width:100%;min-height:160px" id="bB" maxlength="2000" placeholder="내용 (2000자까지)"></textarea>
+      <div class="mbtns"><button class="btn" data-a="mclose">취소</button><button class="btn pri" data-a="bsave">올리기</button></div>`)},
+  bsave:async el=>{const v=id=>($('#'+id)?.value||'').trim(),by=v('bN').slice(0,20),t=v('bT').slice(0,60),b=v('bB').slice(0,2000);
+    if(!by||!t||!b)return toast('닉네임·제목·내용을 모두 써주세요','err');if(!fb||!fb.fs)return;
+    el.disabled=true;try{await fb.fs.addDoc(brdCol(),{by,t,b,me:brdMe(),at:Date.now()});try{localStorage.setItem('lolgada.brd.name',by)}catch(e){}closeModal();render();toast('글을 올렸어요')}
+    catch(e){console.error(e);el.disabled=false;toast('저장 실패 — 연결을 확인해주세요','err')}},
+  bdel:el=>{const id=el.dataset.id,p=BRD.posts.find(x=>x.id===id);if(!p||!(isAdmin()||p.me===brdMe()))return;
+    ask('🗑 글 삭제',`"${esc(p.t)}" 글을 삭제할까요?\n삭제하면 되돌릴 수 없어요.`,async()=>{try{await fb.fs.deleteDoc(fb.fs.doc(brdCol(),id));toast('삭제했어요')}catch(e){console.error(e);toast('삭제 실패','err')}},'삭제')},
   yes:()=>{const f=PENDING;closeModal();f&&f()}
 };
 const CHG={
