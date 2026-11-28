@@ -114,7 +114,7 @@ async function mNewSave() {
   if (S.players.some(p => p.name === name)) { toast(`'${name}'은(는) 이미 멤버예요`, 'err'); $('#mnName')?.focus(); return }
   const r = { tier: $('#mnTier').value, main: $('#mnMain').value, sub: $('#mnSub').value }; if (r.sub === r.main) r.sub = '';
   let id = null;
-  if (!commit(() => { const p = mkPlayer(S, { name }); id = p.id; S.players.push(p) })) return;
+  if (!commit(() => { const p = mkPlayer(S, { name, active: false }); // 팀 대항전 참가는 시즌마다 ✋ 참가자 탭에서 따로 체크 id = p.id; S.players.push(p) })) return;
   closeModal(); toast(`✅ '${name}' 님 추가 완료! (총 ${S.players.length}명)`);
   const rid = MEM.newRid; MEM.newRid = null; if (rid) await gSetLink(rid, String(id)); // 그 닉네임 기록을 새 멤버로
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
