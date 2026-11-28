@@ -459,6 +459,7 @@ select.inp option{background:#0b1424}
 .sh-t td{padding:0 4px;height:32px;text-align:center;font-weight:800;border-bottom:1px solid rgba(255,255,255,.045);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sh-t tbody tr.r:nth-child(even) td{background:rgba(255,255,255,.022)}
 .sh-t .l{text-align:left}
+.sh-t td.clk{cursor:pointer}.sh-t td.clk:hover{background:rgba(10,200,185,.12)!important}.sh-t td.act.clk{font-size:15px}
 .sh-t .rk{color:var(--mut)}
 .sh-t .tier{color:#b9c6da;font-size:12px;font-weight:700}
 .sh-t .tot{color:var(--gold2);font-size:15px;font-weight:900}
@@ -720,8 +721,8 @@ const POS=[{k:'TOP',n:'탑',e:'🛡️'},{k:'JGL',n:'정글',e:'🌿'},{k:'MID',
 const PK=Object.fromEntries(POS.map(p=>[p.k,p]));
 const DEF_TIERS=[
   // 키 = 👥 멤버 탭 티어(members.js M_TIERS) · 멤버 탭에서 고른 티어가 그대로 이 점수로 연결됨
-  {k:'M10',n:'1000LP 이상 (그마·챌 포함)',s:9},{k:'M8',n:'마스터 800~999LP',s:8},{k:'M5',n:'마스터 500~799LP',s:7},
-  {k:'M2',n:'마스터 200~499LP',s:6},{k:'M0',n:'마스터 0~199LP',s:5},{k:'DI',n:'다이아',s:4},{k:'EM',n:'에메랄드',s:3},
+  {k:'M12',n:'마스터 1200LP 이상 (그마·챌 포함)',s:9},{k:'M8',n:'마스터 800~1199LP',s:8},{k:'M4',n:'마스터 400~799LP',s:7},
+  {k:'M0',n:'마스터 0~399LP',s:6},{k:'DI',n:'다이아',s:4},{k:'EM',n:'에메랄드',s:3},
   {k:'PL',n:'플래티넘',s:2},{k:'GO',n:'골드',s:1},{k:'SI',n:'실버',s:1},{k:'BR',n:'브론즈',s:1},{k:'IR',n:'아이언',s:1}
 ];
 const DEF_ADJS=[
@@ -813,7 +814,7 @@ const CLIENT=Math.random().toString(36).slice(2);
 const SH_COLS=[
   {k:'rk',h:'#',w:30},{k:'name',h:'닉네임',w:176,l:1},{k:'tier',h:'티어 구간',w:118,l:1},{k:'ts',h:'티어',w:40},
   {k:'adj',h:'조정',w:62},{k:'tot',h:'기본점수',w:54},{k:'pref',h:'지망',w:92,l:1},
-  ...POS.map(P=>({k:P.k,h:P.n,w:42,lane:1})),{k:'act',h:'출전',w:40}
+  ...POS.map(P=>({k:P.k,h:P.n,w:42,lane:1})),{k:'act',h:'참가',w:40}
 ];
 
 /* ---------- 유틸 ---------- */
@@ -832,7 +833,7 @@ const nameSort=(a,b)=>a.name.localeCompare(b.name,'ko');
 function mkPlayer(s,o={}){return{id:s.seq++,name:'새 멤버',title:'',tc:'',base:4,tier:'',adj:[],pos:[],no:[],ps:{},active:true,...o}}
 function newTeam(s,i){const p=TEAM_PRESETS[i%TEAM_PRESETS.length];return{id:'t'+(s.seq++),name:p.n,color:p.c,slots:Object.fromEntries(POS.map(P=>[P.k,null])),locks:{}}}
 function defaultState(){
-  const s={v:4,seq:1,cap:29,mode:'balance',tiers:clone(DEF_TIERS),adjs:clone(DEF_ADJS),posB:{...DEF_POSB},rules:clone(DEF_RULES),
+  const s={v:5,seq:1,cap:29,mode:'balance',tiers:clone(DEF_TIERS),adjs:clone(DEF_ADJS),posB:{...DEF_POSB},rules:clone(DEF_RULES),
     players:[],teams:[],bracket:null,league:null,ts:defTS(),pinHash:null,meta:{name:'시즌4',start:'2026-11-01',end:'2026-11-30'},updatedAt:0};
   DEFAULT_PLAYERS.forEach(([name,base,adj,pos])=>s.players.push(mkPlayer(s,{name,base,adj:adj||[],pos:pos||[]})));
   for(let i=0;i<5;i++)s.teams.push(newTeam(s,i));
@@ -842,9 +843,9 @@ function normalize(src){
   const d=defaultState();
   if(!src||typeof src!=='object')return d;
   const ver=+src.v||1;
-  const o={...d,...src,v:4};
-  // v4: 티어 키를 멤버 탭 티어로 교체 → 예전 표(GM·D3…)는 새 기본표로
-  o.tiers=ver>=4&&Array.isArray(src.tiers)&&src.tiers.length?src.tiers.map((t,i)=>({k:String(t.k??('T'+i)),n:String(t.n||'구간').slice(0,30),s:num(t.s,0)})):clone(DEF_TIERS);
+  const o={...d,...src,v:5};
+  // v4: 티어 키를 멤버 탭 티어로 교체 · v5: 마스터 구간 4개(0~399·400~799·800~1199·1200+)로 → 예전 표는 새 기본표로
+  o.tiers=ver>=5&&Array.isArray(src.tiers)&&src.tiers.length?src.tiers.map((t,i)=>({k:String(t.k??('T'+i)),n:String(t.n||'구간').slice(0,30),s:num(t.s,0)})):clone(DEF_TIERS);
   o.adjs=Array.isArray(src.adjs)?src.adjs.map((a,i)=>({id:String(a.id??('A'+i)),e:String(a.e||'➕').slice(0,4),n:String(a.n||'항목').slice(0,20),v:num(a.v,0),d:String(a.d||'').slice(0,60)})):clone(DEF_ADJS);
   o.posB={...DEF_POSB};if(src.posB&&ver>=3)POS.forEach(P=>o.posB[P.k]=num(src.posB[P.k],DEF_POSB[P.k]));
   const tk=new Set(o.tiers.map(t=>t.k)),ak=new Set(o.adjs.map(a=>a.id));
@@ -925,7 +926,7 @@ function commit(fn){
    진행 중 시즌 = S 그대로 · 마감한 시즌 = S.ts.arch[k] 스냅샷.
    마감 시즌을 볼 때는 팀 대항전 탭에서만 S를 스냅샷 합친 뷰로 잠깐 바꿔서 렌더·조작하고, 저장은 commit이 스냅샷에 되돌려 씀 */
 function defTS(){return{cur:'s2',list:[{k:'s2',n:'시즌2',done:false}],arch:{}}}
-function normArch(a){const n=normalize({...a,v:4});return Object.fromEntries(AF.map(f=>[f,n[f]]))}
+function normArch(a){const n=normalize({...a,v:5});return Object.fromEntries(AF.map(f=>[f,n[f]]))}
 function normTS(t){
   if(!t||typeof t!=='object'||!Array.isArray(t.list))return defTS();
   const list=t.list.filter(x=>x&&/^s\d+$/.test(x.k)).map(x=>({k:x.k,n:String(x.n||x.k).slice(0,20),done:!!x.done}));
@@ -1322,31 +1323,34 @@ function cellVals(p,rk){
   v.adj={t:p.adj.length?`${adjIcons(p)} ${sgn(as)}`:'-'};v.tot={t:totalBase(p)};
   v.pref={t:p.pos.length?`${PK[p.pos[0]].e} ${p.pos.slice(0,2).map(k=>PK[k].n).join('·')}`:'미정'};
   POS.forEach(P=>{const no=p.no.includes(P.k),i=p.pos.indexOf(P.k);v[P.k]={t:no?'✕':pScore(p,P.k),c:no?'no':i===0?'p1':i===1?'p2':i>1?'p3':''}});
-  v.act={t:p.active?'✅':'💤'};
+  v.act={t:p.active?'✅':'⬜'};
   return v;
 }
 const SORT_L={score:'점수순',pos:'포지션별',name:'가나다순'};
 const footPlain=()=>`라인 점수 = (티어점수(포지션 개별점수) + 조정) × 주포지션 보정  ·  주포지션 보정: ${posBText()}  ·  조정: ${adjText()}  ·  팀 캡 ${S.cap}점  ·  표시: 빨강 = 1지망, 노랑 = 2지망, 하늘 = 3~5지망, ✕ = 불가`;
 function sheetHTML(){
-  const rows=sheetRows(),n=S.players.length,act=S.players.filter(p=>p.active).length;
+  const rows=sheetRows(),n=S.players.length,act=S.players.filter(p=>p.active).length,A=canEdit();
   return`<div class="sheet" id="sheet">
     <div class="sh-head"><img src="${LOGO}" alt=""><div><b>롤가다</b><span>팀 대항전 ${esc(tsName())} 점수표 · ${SORT_L[UI.ls.sort]}${UI.ls.only==='active'?' · 참가자만':''}</span></div>
-      <div class="sh-meta">${todayStr()} 기준<br>총 ${n}명 · 출전 ${act}명</div></div>
+      <div class="sh-meta">${todayStr()} 기준<br>총 ${n}명 · 참가 ${act}명</div></div>
     <table class="sh-t"><colgroup>${SH_COLS.map(c=>`<col style="width:${c.w}px">`).join('')}</colgroup>
       <thead><tr>${SH_COLS.map(c=>`<th class="${c.l?'l':''}">${c.h}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r=>{if(r.g)return`<tr class="grp"><td colspan="${SH_COLS.length}">${esc(r.g)}</td></tr>`;
         const v=cellVals(r.p,r.rk);
         return`<tr class="r ${r.p.active?'':'off'}">${SH_COLS.map(c=>{const x=v[c.k];
           if(c.lane)return`<td class="lane ${x.c}"><span>${x.t}</span></td>`;
-          if(c.k==='name')return`<td class="l name">${nmH(r.p)}</td>`;
+          if(c.k==='name')return`<td class="l name ${A?'clk':''}" ${A?`data-a="pset" data-v="${r.p.id}" title="⚙️ 설정"`:''}>${nmH(r.p)}</td>`;
+          if(c.k==='act')return`<td class="act ${A?'clk':''}" ${A?`data-a="ptog" data-v="${r.p.id}" title="눌러서 참가 체크/해제"`:''}>${x.t}</td>`;
           return`<td class="${c.l?'l':''} ${c.k}${c.k==='adj'?' adjc':''}">${esc(x.t)}</td>`}).join('')}</tr>`}).join('')}</tbody></table>
     <div class="sh-foot">${esc(footPlain())}</div></div>`;
 }
 function renderSheet(){
   V.innerHTML=`
-  <div class="sec-head"><div><div class="h1">📋 한눈에 명단표</div>
-    <div class="sub">카톡 공지방용 — <b style="color:var(--txt)">🖼 이미지로 저장</b>이 제일 깔끔하고, 폰은 <b style="color:var(--txt)">캡쳐 모드</b>로 화면 맞춰 캡쳐해도 OK · 오른쪽(모바일은 아래)에 일반 내전 시즌 순위</div></div></div>
+  <div class="sec-head"><div><div class="h1">✋ ${esc(tsName())} 참가자 · 명단표</div>
+    <div class="sub">👥 멤버 탭 멤버가 자동으로 나와요 · ${canEdit()?'<b style="color:var(--txt)">참가</b> 칸을 눌러 이번 시즌 참가 체크 · 이름을 누르면 ⚙️ 오더·심사위원 조정':'참가 체크는 운영진이 해요'} · 카톡용은 <b style="color:var(--txt)">🖼 이미지로 저장</b> 또는 <b style="color:var(--txt)">캡쳐 모드</b></div></div>
+    <div class="stat" style="min-width:120px;text-align:center"><div class="k">참가</div><div class="v">${S.players.filter(p=>p.active).length}<small> / ${S.players.length}명</small></div></div></div>
   <div class="card toolbar ctrlbar">
+    ${canEdit()?'<div class="row gap"><button class="btn sm" data-a="allin">✅ 전원 참가</button><button class="btn sm" data-a="allout">💤 전원 해제</button></div>':''}
     <div class="ctl row gap"><span class="sub" style="font-weight:800">정렬</span><div class="seg">${Object.entries(SORT_L).map(([k,n])=>`<button class="${UI.ls.sort===k?'on':''}" data-a="lsort" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="ctl row gap"><span class="sub" style="font-weight:800">범위</span><div class="seg">${[['all','전체'],['active','참가자만']].map(([k,n])=>`<button class="${UI.ls.only===k?'on':''}" data-a="lonly" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="row gap wrapr mla"><button class="btn pri" data-a="png">🖼 이미지로 저장</button><button class="btn" data-a="capture">🖥 캡쳐 모드</button></div>
@@ -1361,7 +1365,7 @@ function fitSheet(){
   s.style.transform='';const sc=Math.min(1,w.clientWidth/s.offsetWidth);
   s.style.transform=sc<1?`scale(${sc})`:'';w.style.height=(s.offsetHeight*sc)+'px';
 }
-addEventListener('resize',()=>{if(UI.tab==='part'&&UI.pview==='sheet')fitSheet()});
+addEventListener('resize',()=>{if(UI.tab==='part')fitSheet()});
 /* 캔버스로 직접 그리는 PNG (외부 라이브러리 없음) */
 async function makePNG(){
   try{await document.fonts?.ready}catch(e){}
@@ -1744,29 +1748,8 @@ function renderReg(){
       :'<div class="sub">참가자가 없어요 · ✋ 참가자 탭에서 이번 시즌 참가자를 체크해 주세요</div>'}
   </div>`;
 }
-/* ✋ 참가자: 멤버 탭 명단(S.players) 전부를 보여 주고 이번 시즌 참가자만 체크 (p.active · 새 시즌 시작 때 전원 해제) */
-// ✋ 참가자·명단표: 한 탭 안에서 [참가자 선택 | 명단표] 전환
-function renderPart(){
-  const sw=`<div class="subtabs pvbar"><div class="seg">${[['pick','✋ 참가자 선택'],['sheet','📋 명단표']].map(([k,n])=>`<button class="${(UI.pview||'pick')===k?'on':''}" data-a="pview" data-v="${k}">${n}</button>`).join('')}</div></div>`;
-  if(UI.pview==='sheet'){renderSheet();V.insertAdjacentHTML('afterbegin',sw);return}
-  renderPick();V.insertAdjacentHTML('afterbegin',sw);
-}
-function renderPick(){
-  const A=canEdit(),q=(UI.pq||'').trim().toLowerCase(),on=S.players.filter(p=>p.active).length;
-  const lane=p=>{const m=typeof rosterOf==='function'?rosterOf(p.id).main:'';return PK[m]?PK[m].e+' '+PK[m].n:''};
-  const list=[...S.players].filter(p=>!q||p.name.toLowerCase().includes(q)).sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
-  V.innerHTML=`
-  <div class="sec-head"><div><div class="h1">✋ ${esc(tsName())} 참가자</div>
-    <div class="sub">👥 멤버 탭에 등록된 멤버가 자동으로 여기 나와요 · 이번 시즌 팀 대항전에 나갈 사람만 체크 · 체크한 사람만 팀 구성·명단표에 나와요 · ⚙️ 로 오더·심사위원 조정, 불가 포지션 설정</div></div>
-    <div class="stat" style="min-width:120px;text-align:center"><div class="k">참가</div><div class="v">${on}<small> / ${S.players.length}명</small></div></div></div>
-  <div class="card"><div class="row gap wrapr" style="margin-bottom:10px"><input class="inp search" data-i="pq" placeholder="🔍 닉네임 검색" value="${esc(UI.pq||'')}">
-    ${A?'<button class="btn sm" data-a="allin">✅ 전원 참가</button><button class="btn sm" data-a="allout">💤 전원 해제</button>':'<span class="sub">참가 체크는 운영진만 할 수 있어요</span>'}</div>
-    ${S.players.length?`<div class="rg-grid">${list.map(p=>`<div class="rg-p ${p.active?'in':''}" data-a="ptog" data-v="${p.id}" role="button" tabindex="0">
-      <span class="t"><span>${p.active?'✅':'⬜'} ${esc(p.name)}</span><button class="btn sm" data-a="pset" data-v="${p.id}" title="점수·조정·불가 포지션">⚙️</button></span>
-      <span class="m">${lane(p)}${lane(p)?' · ':''}${esc(tierLbl(p))}</span>
-      <span class="m">기본 <b style="color:var(--gold2)">${totalBase(p)}점</b>${supMul(p)<1?` <span title="주포지션 ${PK[mainOf(p)].n}: 기본값 × ${Math.round(supMul(p)*100)}%">(×${Math.round(supMul(p)*100)}%)</span>`:''}${p.adj.length?` · ${adjIcons(p)} ${sgn(adjSum(p))}`:''}${p.no.length?` · 🚫 ${p.no.map(k=>PK[k].n).join('·')}`:''}</span></div>`).join('')}</div>`:'<div class="sub">멤버가 없어요 · 👥 멤버 탭에서 먼저 추가해 주세요</div>'}
-  </div>`;
-}
+// ✋ 참가자·명단표 = 명단표 그대로 + 참가 체크(운영진) + 이름 누르면 ⚙️ 설정
+function renderPart(){renderSheet()}
 /* ⚙️ 참가자 설정 = 예전 🧮 팀원 점수 카드(mcard) 그대로 모달로 */
 function psetModal(id,focus=true){
   const p=player(id);if(!p){UI.pset=null;closeModal();return}
@@ -2410,7 +2393,7 @@ async function startSync(){
     unsubB=fsM.onSnapshot(fb.refB,snap=>{
       const d=snap.exists()?snap.data():null;if(!d||d.by===CLIENT)return;
       B={img:typeof d.img==='string'&&d.img.startsWith('data:image/')?d.img:null,note:String(d.note||''),at:num(d.at,0)};saveB();
-      if(UI.tab==='part'&&UI.pview==='sheet'&&M.classList.contains('hidden')){const a=document.activeElement;if(!(a&&a.dataset&&(a.dataset.i||a.dataset.c)))render()}
+      if(UI.tab==='part'&&M.classList.contains('hidden')){const a=document.activeElement;if(!(a&&a.dataset&&(a.dataset.i||a.dataset.c)))render()}
     },err=>console.error('board sync',err));
     unsubC=fsM.onSnapshot(fb.refC,snap=>{
       fb.gotC=true;const d=snap.exists()?snap.data():null;
@@ -2492,7 +2475,6 @@ const ACT={
   base:el=>commit(()=>{const p=P_(el);p.base=clamp(baseOf(p)+(+el.dataset.v),-20,50);p.tier=''}),
   posm:el=>{UI.pset=null;posModal(+el.dataset.id)},
   pset:el=>psetModal(+el.dataset.v),
-  pview:el=>{UI.pview=el.dataset.v;render()},
   posreset:el=>commit(()=>{const p=P_(el);p.pos=[];p.no=[];p.ps={}}),
   delp:el=>{const p=P_(el);if(!canEdit())return toast(RO_MSG,'err');ask('🗑 멤버 삭제',`'${esc(p.name)}' 님을 명단에서 삭제할까요?\n팀에 배치돼 있으면 같이 빠져요.`,()=>commit(()=>{S.players=S.players.filter(x=>x.id!==p.id);S.teams.forEach(t=>POS.forEach(P=>{if(t.slots[P.k]===p.id)t.slots[P.k]=null}))}),'삭제')},
   fpos:el=>{UI.fpos=el.dataset.v;render()},

@@ -3,9 +3,9 @@
    닉네임 · 티어 · 주라인 · 부라인. 멤버 추가는 이 탭에서만.
    명단 자체는 S.players(팀 대항전·팀 뽑기와 공유), 티어·라인은 Firestore season4_games/roster/{멤버id}
    ========================================================= */
-// 마스터부터 세분화. 마스터는 LP로 나누고, 1000LP 이상(그마·챌린저 포함)은 최고 티어 하나로
-const M_TIERS = [['M10', '1000LP 이상', '#f4c874'], ['M8', '마스터 800~999LP', '#e0609e'], ['M5', '마스터 500~799LP', '#d066e0'],
-  ['M2', '마스터 200~499LP', '#b36cf0'], ['M0', '마스터 0~199LP', '#9b7cf0'], ['DI', '다이아', '#5aa6f0'],
+// 마스터부터 세분화. 마스터는 LP로 400 단위로 나누고, 1200LP 이상(그마·챌린저 포함)은 최고 티어 하나로
+const M_TIERS = [['M12', '마스터 1200LP 이상', '#f4c874'], ['M8', '마스터 800~1199LP', '#e0609e'], ['M4', '마스터 400~799LP', '#c06ae8'],
+  ['M0', '마스터 0~399LP', '#9b7cf0'], ['DI', '다이아', '#5aa6f0'],
   ['EM', '에메랄드', '#3fc98a'], ['PL', '플래티넘', '#4fc1c4'], ['GO', '골드', '#e0b04a'], ['SI', '실버', '#9fb0bf'], ['BR', '브론즈', '#b07a55'], ['IR', '아이언', '#8a8a8a']];
 const MT = Object.fromEntries(M_TIERS.map(([k, n, c], i) => [k, { k, n, c, i }]));
 const MEM = { q: '', view: 'all' };
@@ -33,12 +33,11 @@ function mListHTML(A) {
   const row = p => { const r = rosterOf(p.id), m = mPref(p); return `<tr>
       <td class="g-nm"><b>${esc(p.name)}</b></td>
       <td>${A ? mSel(`data-c="mtier" data-id="${p.id}"`, r.tier, M_TIERS, '티어 미정') : mTierBadge(r.tier)}</td>
-      <td><div class="prefs m-prefs">${G_POS.map(k => { const i = m.pref.indexOf(k), no = m.no.includes(k);
-        return `<button class="pf ${i >= 0 ? 'on' : ''} ${i === 0 ? 'p1' : ''} ${no ? 'no' : ''}" data-a="mpref" data-id="${p.id}" data-v="${k}" ${A ? '' : 'disabled'} title="${A ? '누를 때마다 지망 추가 → 🚫 불가 → 해제' : ''}"><span>${M_EMO[k] || PK[k].e}</span>${PK[k].n}${i >= 0 ? `<i>${i + 1}</i>` : no ? '<i>✕</i>' : ''}</button>` }).join('')}</div></td></tr>` };
+      <td>${mPosChips(m, A ? p.id : null)}</td></tr>` };
   return `<div class="card"><div class="h2">📋 멤버 목록 <span class="sub">티어순</span>
       <input class="inp mla" style="width:180px" data-i="mq" placeholder="🔍 닉네임 검색" value="${esc(MEM.q)}"></div>
     <div class="g-seg m-lanes">${[['all', `전체 <span class="sub">${S.players.length}</span>`], ...G_POS.map(k => [k, `${mLane(k)} <span class="sub">${laneN(k)}</span>`])].map(([k, n]) => `<button class="chip ${v === k ? 'on' : ''}" data-a="msort" data-v="${k}">${n}</button>`).join('')}</div>
-    <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>포지션 <span class="sub">숫자 = 지망 순서 (1지망 = 주라인) · ✕ = 불가</span></th></tr></thead>
+    <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>포지션 <span class="sub">지망 순 · 1지망 = 주라인 · ✕ = 불가${A ? ' · 눌러서 수정' : ''}</span></th></tr></thead>
       <tbody>${list.map(row).join('') || `<tr><td colspan="3" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
 }
 
@@ -95,15 +94,31 @@ function mPref(p) {
   const pref = ml.length ? [...ml, ...(p.pos || []).filter(k => !ml.includes(k))] : [...(p.pos || [])];
   return { pref, no: (p.no || []).filter(k => !pref.includes(k)) };
 }
-async function mPrefSave(el) {
+// 지망 순서대로 텍스트 칩 (id 주면 눌러서 수정)
+const mPosChips = (m, id) => `<div class="m-pos" ${id != null ? `data-a="mposm" data-id="${id}" role="button" title="눌러서 수정"` : ''}>${
+  m.pref.map((k, i) => `<span class="m-pc ${i === 0 ? 'p1' : ''}"><b>${i + 1}</b>${PK[k].n}</span>`).join('')}${
+  m.no.map(k => `<span class="m-pc no"><b>✕</b>${PK[k].n}</span>`).join('')}${
+  !m.pref.length && !m.no.length ? '<span class="sub">미정</span>' : ''}${id != null ? '<span class="m-ed">수정</span>' : ''}</div>`;
+// 포지션 수정 창: 하고 싶은 순서대로 누르면 1·2·3… 지망, 다시 누르면 빠짐 · 아래 줄은 불가 켜고 끄기
+function mPosModal(id, focus = true) {
+  const p = player(id); if (!p) return closeModal();
+  const m = mPref(p);
+  modal(`<div class="mh">${esc(p.name)} 포지션</div>
+    <div class="m-prev">${mPosChips(m, null)}</div>
+    <div class="fl" style="margin-top:12px">지망 <span class="sub">하고 싶은 순서대로 누르세요 · 다시 누르면 빠져요</span></div>
+    <div class="m-lbs">${G_POS.map(k => { const i = m.pref.indexOf(k);
+      return `<button class="m-lb ${i >= 0 ? 'on' : ''}" data-a="mpk" data-id="${id}" data-v="${k}">${PK[k].n}<small>${i >= 0 ? `${i + 1}지망` : m.no.includes(k) ? '불가' : '－'}</small></button>` }).join('')}</div>
+    <div class="fl" style="margin-top:12px">불가 <span class="sub">절대 안 되는 포지션 (켜면 지망에서 빠져요)</span></div>
+    <div class="m-lbs">${G_POS.map(k => `<button class="m-lb ${m.no.includes(k) ? 'no' : ''}" data-a="mpn" data-id="${id}" data-v="${k}">${PK[k].n}<small>${m.no.includes(k) ? '✕ 불가' : '－'}</small></button>`).join('')}</div>
+    <div class="mbtns"><button class="btn" data-a="mpclr" data-id="${id}">↺ 비우기</button><button class="btn pri" data-a="mclose">완료</button></div>`, focus);
+}
+async function mPosSet(el, fn) {
   if (!isAdmin()) { toast('운영진만 바꿀 수 있어요', 'err'); return }
   const id = Number(el.dataset.id), k = el.dataset.v, p = player(id); if (!p) return;
-  let { pref, no } = mPref(p); pref = [...pref]; no = [...no];
-  if (pref.includes(k)) { pref = pref.filter(x => x !== k); no.push(k) } // 지망 → 불가
-  else if (no.includes(k)) no = no.filter(x => x !== k);                // 불가 → 해제
-  else pref.push(k);                                                    // 해제 → 다음 지망
-  const cur = { ...rosterOf(id), pref, no, main: pref[0] || '', sub: pref[1] || '' };
-  GM.roster = { ...(GM.roster || {}), [id]: cur }; render();
+  const m = mPref(p), pref = [...m.pref], no = [...m.no]; fn(pref, no, k);
+  const P = pref.filter((x, i) => pref.indexOf(x) === i), N = no.filter(x => !P.includes(x));
+  const cur = { ...rosterOf(id), pref: P, no: N, main: P[0] || '', sub: P[1] || '' };
+  GM.roster = { ...(GM.roster || {}), [id]: cur }; render(); mPosModal(id, false);
   try { await mWrite(id, cur) } catch (e) { console.error(e); toast('저장 실패 — 다시 시도해 주세요', 'err') }
 }
 async function mSave(el, field) {
@@ -141,7 +156,12 @@ async function mNewSave() {
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
 }
 Object.assign(CHG, { mtier: el => mSave(el, 'tier'), mmain: el => mSave(el, 'main'), msub: el => mSave(el, 'sub') });
-Object.assign(ACT, { mpref: mPrefSave, msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: () => mNewModal(), mnreg: el => mNewModal(el.dataset.v), mnsave: mNewSave });
+Object.assign(ACT, {
+  mposm: el => isAdmin() ? mPosModal(Number(el.dataset.id)) : null,
+  mpk: el => mPosSet(el, (pref, no, k) => { const i = pref.indexOf(k); if (i >= 0) pref.splice(i, 1); else { pref.push(k); const j = no.indexOf(k); if (j >= 0) no.splice(j, 1) } }),
+  mpn: el => mPosSet(el, (pref, no, k) => { const j = no.indexOf(k); if (j >= 0) no.splice(j, 1); else { no.push(k); const i = pref.indexOf(k); if (i >= 0) pref.splice(i, 1) } }),
+  mpclr: el => mPosSet(el, (pref, no) => { pref.length = 0; no.length = 0 }),
+  msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: () => mNewModal(), mnreg: el => mNewModal(el.dataset.v), mnsave: mNewSave });
 Object.assign(INP, { mq: el => { MEM.q = el.value; const pos = el.selectionStart; render(); const n = $('[data-i="mq"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) {} } } });
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
@@ -152,5 +172,16 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .m-lanes{margin:0 0 10px;flex-wrap:wrap}
 .m-cnt{display:inline-block;min-width:18px;padding:0 5px;border-radius:99px;background:var(--pink,#ff5d8f);color:#fff;font-size:11px;margin-left:4px}
 .m-merge{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-.m-prefs{min-width:260px;max-width:340px}.m-prefs .pf{cursor:pointer;padding:5px 2px}.m-prefs .pf:disabled{cursor:default}
+.m-pos{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-width:200px}
+.m-pos[role]{cursor:pointer;border-radius:10px;padding:3px;margin:-3px}.m-pos[role]:hover{background:rgba(10,200,185,.08)}
+.m-pc{display:inline-flex;gap:4px;align-items:center;padding:2px 9px;border-radius:999px;font-size:12.5px;font-weight:800;border:1px solid var(--line2);background:rgba(10,200,185,.08);color:var(--txt)}
+.m-pc b{font-size:11px;color:var(--teal2)}.m-pc.p1{border-color:var(--gold2)}.m-pc.p1 b{color:var(--gold2)}
+.m-pc.no{border-color:rgba(255,84,104,.45);background:rgba(255,84,104,.08);color:#ff8795}.m-pc.no b{color:#ff8795}
+.m-ed{font-size:11px;color:var(--mut);text-decoration:underline;margin-left:2px}
+.m-prev{margin-top:8px}.m-prev .m-pos{min-width:0}
+.m-lbs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-top:6px}
+.m-lb{padding:10px 2px;border-radius:10px;border:1px solid var(--line2);background:rgba(0,0,0,.2);color:var(--txt);font:inherit;font-weight:800;cursor:pointer}
+.m-lb small{display:block;font-size:11px;font-weight:700;color:var(--mut);margin-top:2px}
+.m-lb.on{border-color:var(--teal2);background:rgba(10,200,185,.14)}.m-lb.on small{color:var(--gold2)}
+.m-lb.no{border-color:var(--red);background:rgba(255,84,104,.14);color:#ff8795}.m-lb.no small{color:#ff8795}
 ` }));
