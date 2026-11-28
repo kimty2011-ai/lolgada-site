@@ -719,9 +719,10 @@ document.querySelectorAll('.logo-img').forEach(i=>i.src=LOGO);
 const POS=[{k:'TOP',n:'탑',e:'🛡️'},{k:'JGL',n:'정글',e:'🌿'},{k:'MID',n:'미드',e:'⚡'},{k:'ADC',n:'원딜',e:'🏹'},{k:'SUP',n:'서폿',e:'💖'}];
 const PK=Object.fromEntries(POS.map(p=>[p.k,p]));
 const DEF_TIERS=[
-  {k:'GM',n:'그랜드마스터 이상',s:9},{k:'M5',n:'마스터 500LP 이상',s:7},{k:'M2',n:'마스터 200~499LP',s:6},
-  {k:'M0',n:'마스터 0~199LP · 다이아1~2',s:5},{k:'D3',n:'다이아3 ~ 에메랄드2',s:4},{k:'E3',n:'에메랄드3 ~ 플래티넘2',s:3},
-  {k:'P3',n:'플래티넘3 ~ 골드2',s:2},{k:'G3',n:'골드3 이하',s:1}
+  // 키 = 👥 멤버 탭 티어(members.js M_TIERS) · 멤버 탭에서 고른 티어가 그대로 이 점수로 연결됨
+  {k:'M10',n:'1000LP 이상 (그마·챌 포함)',s:9},{k:'M8',n:'마스터 800~999LP',s:8},{k:'M5',n:'마스터 500~799LP',s:7},
+  {k:'M2',n:'마스터 200~499LP',s:6},{k:'M0',n:'마스터 0~199LP',s:5},{k:'DI',n:'다이아',s:4},{k:'EM',n:'에메랄드',s:3},
+  {k:'PL',n:'플래티넘',s:2},{k:'GO',n:'골드',s:1},{k:'SI',n:'실버',s:1},{k:'BR',n:'브론즈',s:1},{k:'IR',n:'아이언',s:1}
 ];
 const DEF_ADJS=[
   {id:'order',e:'👑',n:'오더 가능',v:1,d:'팀원 전체 오더 가능 · 운영진·심사위원 결정'},
@@ -831,7 +832,7 @@ const nameSort=(a,b)=>a.name.localeCompare(b.name,'ko');
 function mkPlayer(s,o={}){return{id:s.seq++,name:'새 멤버',title:'',tc:'',base:4,tier:'',adj:[],pos:[],no:[],ps:{},active:true,...o}}
 function newTeam(s,i){const p=TEAM_PRESETS[i%TEAM_PRESETS.length];return{id:'t'+(s.seq++),name:p.n,color:p.c,slots:Object.fromEntries(POS.map(P=>[P.k,null])),locks:{}}}
 function defaultState(){
-  const s={v:3,seq:1,cap:29,mode:'balance',tiers:clone(DEF_TIERS),adjs:clone(DEF_ADJS),posB:{...DEF_POSB},rules:clone(DEF_RULES),
+  const s={v:4,seq:1,cap:29,mode:'balance',tiers:clone(DEF_TIERS),adjs:clone(DEF_ADJS),posB:{...DEF_POSB},rules:clone(DEF_RULES),
     players:[],teams:[],bracket:null,league:null,ts:defTS(),pinHash:null,meta:{name:'시즌4',start:'2026-11-01',end:'2026-11-30'},updatedAt:0};
   DEFAULT_PLAYERS.forEach(([name,base,adj,pos])=>s.players.push(mkPlayer(s,{name,base,adj:adj||[],pos:pos||[]})));
   for(let i=0;i<5;i++)s.teams.push(newTeam(s,i));
@@ -841,8 +842,9 @@ function normalize(src){
   const d=defaultState();
   if(!src||typeof src!=='object')return d;
   const ver=+src.v||1;
-  const o={...d,...src,v:3};
-  o.tiers=Array.isArray(src.tiers)&&src.tiers.length?src.tiers.map((t,i)=>({k:String(t.k??('T'+i)),n:String(t.n||'구간').slice(0,30),s:num(t.s,0)})):clone(DEF_TIERS);
+  const o={...d,...src,v:4};
+  // v4: 티어 키를 멤버 탭 티어로 교체 → 예전 표(GM·D3…)는 새 기본표로
+  o.tiers=ver>=4&&Array.isArray(src.tiers)&&src.tiers.length?src.tiers.map((t,i)=>({k:String(t.k??('T'+i)),n:String(t.n||'구간').slice(0,30),s:num(t.s,0)})):clone(DEF_TIERS);
   o.adjs=Array.isArray(src.adjs)?src.adjs.map((a,i)=>({id:String(a.id??('A'+i)),e:String(a.e||'➕').slice(0,4),n:String(a.n||'항목').slice(0,20),v:num(a.v,0),d:String(a.d||'').slice(0,60)})):clone(DEF_ADJS);
   o.posB={...DEF_POSB};if(src.posB&&ver>=3)POS.forEach(P=>o.posB[P.k]=num(src.posB[P.k],DEF_POSB[P.k]));
   const tk=new Set(o.tiers.map(t=>t.k)),ak=new Set(o.adjs.map(a=>a.id));
@@ -923,7 +925,7 @@ function commit(fn){
    진행 중 시즌 = S 그대로 · 마감한 시즌 = S.ts.arch[k] 스냅샷.
    마감 시즌을 볼 때는 팀 대항전 탭에서만 S를 스냅샷 합친 뷰로 잠깐 바꿔서 렌더·조작하고, 저장은 commit이 스냅샷에 되돌려 씀 */
 function defTS(){return{cur:'s2',list:[{k:'s2',n:'시즌2',done:false}],arch:{}}}
-function normArch(a){const n=normalize({...a,v:3});return Object.fromEntries(AF.map(f=>[f,n[f]]))}
+function normArch(a){const n=normalize({...a,v:4});return Object.fromEntries(AF.map(f=>[f,n[f]]))}
 function normTS(t){
   if(!t||typeof t!=='object'||!Array.isArray(t.list))return defTS();
   const list=t.list.filter(x=>x&&/^s\d+$/.test(x.k)).map(x=>({k:x.k,n:String(x.n||x.k).slice(0,20),done:!!x.done}));
@@ -1053,7 +1055,18 @@ function renderHeader(){
   rb.classList.toggle('hidden',!showRB);
   if(showRB)rb.innerHTML=`<div>👀 보기 전용 모드 · ${S.pinHash?'수정하려면 운영진 PIN을 입력하세요':'아직 운영진 PIN이 없어요 — 먼저 만들어주세요'} <span class="sub">(🎮 일반내전은 누구나 조작 가능)</span><button class="btn sm gold" data-a="unlock">${S.pinHash?'🔐 PIN 입력':'🔐 PIN 만들기'}</button></div>`;
 }
+/* 👥 멤버 탭 티어·주/부라인 → 진행 중 시즌 선수 점수(p.tier, p.pos)로 덮어쓰기.
+   저장은 운영진이 뭔가 저장할 때 같이 됨 · 마감 시즌은 스냅샷 값 그대로 */
+function syncRoster(){
+  const st=LIVE||S;if(typeof rosterOf!=='function'||typeof GM==='undefined'||!GM.roster)return;
+  const tk=new Set(st.tiers.map(t=>t.k));
+  st.players.forEach(p=>{const r=rosterOf(p.id);
+    if(tk.has(r.tier))p.tier=r.tier;
+    if(PK[r.main]){const ml=[r.main,...(PK[r.sub]&&r.sub!==r.main?[r.sub]:[])];p.pos=[...ml,...p.pos.filter(k=>!ml.includes(k))];p.no=p.no.filter(k=>!ml.includes(k))}});
+}
+const fromRoster=p=>typeof rosterOf==='function'&&!LIVE&&S.players.includes(p)?rosterOf(p.id):{};
 function render(){
+  syncRoster();
   renderHeader();
   const team=TEAM_TABS.includes(UI.tab);
   if(team&&!teamTabsFor().includes(UI.tab))UI.tab=teamTabsFor()[0];
@@ -1217,12 +1230,15 @@ function mcard(p){
     </div>
     <div class="mc-title"><span>🏷️ 칭호</span><div class="tcwrap"><input class="inp" data-c="title" data-id="${p.id}" maxlength="16" placeholder="비워두면 표시 안 함" value="${esc(p.title)}" ${D}>
       <div class="tcpick">${TC.map(c=>`<button type="button" class="tcs ${p.tc===c.k?'on':''}" style="--c:${c.h}" data-a="tcset" data-id="${p.id}" data-v="${c.k}" title="칭호 색: ${c.n}" ${D}></button>`).join('')}</div></div></div>
-    <div class="mc-f"><span>티어</span><select class="inp" data-c="tier" data-id="${p.id}" ${D}>
+    ${t&&fromRoster(p).tier===p.tier?`<div class="mc-f"><span>티어</span><span><b>${esc(t.n)} · ${t.s}점</b> <span class="sub">👥 멤버 탭 기준</span></span></div>`
+    :`<div class="mc-f"><span>티어</span><select class="inp" data-c="tier" data-id="${p.id}" ${D}>
       <option value="">✍️ 직접 입력 (${p.base}점)</option>
       ${S.tiers.map(x=>`<option value="${esc(x.k)}" ${p.tier===x.k?'selected':''}>${esc(x.n)} · ${x.s}점</option>`).join('')}</select></div>
     <div class="mc-f"><span>티어점수</span><div class="stepper"><button data-a="base" data-v="-1" data-id="${p.id}" ${D}>−</button><input type="number" data-c="base" data-id="${p.id}" value="${baseOf(p)}" ${D}><button data-a="base" data-v="1" data-id="${p.id}" ${D}>+</button></div></div>
+    <div class="sub" style="margin:-2px 0 6px">💡 👥 멤버 탭에서 티어를 정하면 자동으로 연결돼요</div>`}
     <div class="mc-f"><span>조정</span><div class="mc-adj">${S.adjs.map(a=>{const on=p.adj.includes(a.id);return`<button class="chip ${on?'on adj'+(a.v<0?' neg':''):''}" data-a="adj" data-id="${p.id}" data-v="${esc(a.id)}" title="${esc(a.d)}" ${D}>${esc(a.e)} ${esc(a.n)} ${sgn(a.v)}</button>`}).join('')||'<span class="sub">[점수 기준]에서 항목 추가</span>'}</div></div>
-    <div class="prefs">${POS.map(P=>{const i=p.pos.indexOf(P.k),no=p.no.includes(P.k);return`<button class="pf ${i>=0?'on':''} ${i===0?'p1':''} ${no?'no':''}" data-a="pref" data-id="${p.id}" data-v="${P.k}" ${D}><span>${P.e}</span>${P.n}${i>=0?`<i>${i+1}</i>`:no?'<i>✕</i>':''}</button>`}).join('')}</div>
+    ${PK[fromRoster(p).main]?'<div class="sub" style="margin-bottom:4px">라인: 👥 멤버 탭 주라인(1) · 부라인(2) 기준 · 출전 라인은 🧩 팀 구성에서 골라요</div>':''}
+    <div class="prefs">${POS.map(P=>{const i=p.pos.indexOf(P.k),no=p.no.includes(P.k),lk=PK[fromRoster(p).main]&&!no&&i>=0&&i<2;return`<button class="pf ${i>=0?'on':''} ${i===0?'p1':''} ${no?'no':''}" data-a="pref" data-id="${p.id}" data-v="${P.k}" ${lk?'disabled title="멤버 탭에서 바꿔요"':D}><span>${P.e}</span>${P.n}${i>=0?`<i>${i+1}</i>`:no?'<i>✕</i>':''}</button>`}).join('')}</div>
     <div class="lanes">${POS.map((P,i)=>`<span class="${p.no.includes(P.k)?'no':lanes[i]===best?'best':''}" title="${Number.isFinite(p.ps[P.k])?'개별 점수 적용':''}">${P.n}<b>${lanes[i]}${Number.isFinite(p.ps[P.k])?'*':''}</b></span>`).join('')}
       <button class="pbtn" data-a="posm" data-id="${p.id}">🎯 포지션 설정</button>
       <button class="del" data-a="delp" data-id="${p.id}" title="삭제" ${D}>🗑</button></div>
@@ -1853,8 +1869,8 @@ function renderCfg(){
         <input class="inp grow" data-c="tiername" data-k="${esc(t.k)}" value="${esc(t.n)}" maxlength="30" ${D}>
         <div class="stepper"><button data-a="tierS" data-k="${esc(t.k)}" data-v="-1" ${D}>−</button><input type="number" data-c="tierscore" data-k="${esc(t.k)}" value="${t.s}" ${D}><button data-a="tierS" data-k="${esc(t.k)}" data-v="1" ${D}>+</button></div>
         <span class="tag t-mut">${usedT(t.k)}명</span>
-        <button class="del" data-a="tdel" data-k="${esc(t.k)}" title="삭제" ${D}>🗑</button></div>`).join('')}</div>
-      <div class="row gap wrapr"><button class="btn sm pri" data-a="tadd" ${D}>＋ 티어 구간 추가</button><button class="btn sm" data-a="tdef" ${D}>↺ 공지 기준으로 복원</button></div>
+        </div>`).join('')}</div>
+      <div class="row gap wrapr"><span class="sub">구간은 👥 멤버 탭 티어와 1:1로 연결돼요 · 이름과 점수만 바꿀 수 있어요</span><button class="btn sm" data-a="tdef" ${D}>↺ 기본값으로 복원</button></div>
     </div>
     <div class="card"><div class="h2">🧭 주포지션 보정 (%)</div>
       <div class="sub" style="margin-bottom:8px">＋는 주포지션(1지망)으로 출전할 때만 · −는 그 주포지션 선수의 기본값 자체에 적용</div>
