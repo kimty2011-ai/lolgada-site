@@ -1034,14 +1034,14 @@ function balanceCore(teams,pool,cap,W){
 
 /* ---------- 렌더 ---------- */
 const TABS=[
-  {k:'home',n:'🏠 홈'},{k:'members',n:'👥 멤버'},{k:'stats',n:'📊 통계'},{k:'draft',n:'🎲 팀 뽑기'},{k:'roster',n:'🧮 팀원 점수'},{k:'sheet',n:'📋 명단표'},{k:'build',n:'⚔️ 팀 빌더'},
+  {k:'home',n:'🏠 홈'},{k:'members',n:'👥 멤버'},{k:'stats',n:'📊 통계'},{k:'draft',n:'🎲 팀 뽑기'},{k:'part',n:'✋ 참가자'},{k:'sheet',n:'📋 명단표'},
   {k:'records',n:'📜 기록'},{k:'bracket',n:'🏆 대진·순위'},{k:'cfg',n:'🧮 점수 기준'},{k:'rules',n:'📢 공지'},{k:'settings',n:'⚙️ 설정'},
-  {k:'part',n:'✋ 참가자'},{k:'reg',n:'🧩 팀 구성'},{k:'trule',n:'📜 시즌 룰'}
+  {k:'reg',n:'🧩 팀 구성'},{k:'trule',n:'📜 시즌 룰'}
 ];
 const V=$('#view');
 /* 팀대항전 관련 탭 4개는 상단에서 '🏆 팀 대항전' 하나로 묶고, 안에서 소메뉴로 전환 (탭 키는 그대로 유지) */
-const TEAM_TABS=['part','reg','roster','sheet','build','bracket','cfg','trule'];
-function navTabs(){const out=[];TABS.forEach(t=>{if(!TEAM_TABS.includes(t.k))return out.push(t);if(t.k==='roster')out.push({k:UI.lastTeam||'sheet',n:'🏆 팀 대항전',grp:1})});return out}
+const TEAM_TABS=['part','reg','sheet','bracket','cfg','trule'];
+function navTabs(){const out=[];TABS.forEach(t=>{if(!TEAM_TABS.includes(t.k))return out.push(t);if(t.k==='part')out.push({k:TEAM_TABS.includes(UI.lastTeam)?UI.lastTeam:'part',n:'🏆 팀 대항전',grp:1})});return out}
 function renderHeader(){
   Object.assign(S.meta,autoMeta()); // 저장된 값과 상관없이 항상 이번 달 시즌
   $('#tabs').innerHTML=navTabs().map(t=>`<button class="tab ${(t.grp?TEAM_TABS.includes(UI.tab):UI.tab===t.k)?'on':''}" data-a="tab" data-v="${t.k}">${t.n}</button>`).join('');
@@ -1074,6 +1074,7 @@ function render(){
   const body=()=>({home:()=>{renderHome();mountVideo()},stats:()=>renderStats(),records:()=>renderGameRecords(),members:()=>renderMembers(),draft:()=>renderDraft(),roster:renderRoster,sheet:renderSheet,casual:renderCasual,build:renderBuild,bracket:renderBracket,cfg:renderCfg,rules:renderRules,settings:renderSettings,part:renderPart,reg:renderReg,trule:renderTRule})[UI.tab]();
   if(LIVE){const v=S,l=LIVE;S=l;LIVE=null;try{inView(body)}finally{S=v;LIVE=l}}else inView(body);
   if(team){const b=LIVE||S,ck=viewK()||b.ts.cur;UI.lastTeam=UI.tab;V.insertAdjacentHTML('afterbegin',`<div class="subtabs tsbar">${b.ts.list.map(x=>`<button class="chip ${x.k===ck?'on':''}" data-a="tseason" data-v="${x.k}">${x.done?'📁':'🔥'} ${esc(x.n)}${x.done?'':' · 진행 중'}</button>`).join('')}${isAdmin()&&!viewK()?'<button class="chip" data-a="tsnew">＋ 새 시즌 시작</button>':''}</div><div class="subtabs">${teamTabsFor().map(k=>{const t=TABS.find(x=>x.k===k);return`<button class="chip ${UI.tab===k?'on':''}" data-a="tab" data-v="${k}">${t.n}</button>`}).join('')}</div>`)}
+  if(UI.pset!=null&&!M.classList.contains('hidden'))psetModal(UI.pset,false);
   if(UI.posM!=null&&!M.classList.contains('hidden'))posModal(UI.posM,false);
   POP=false;
 }
@@ -1747,14 +1748,22 @@ function renderPart(){
   const list=[...S.players].filter(p=>!q||p.name.toLowerCase().includes(q)).sort((a,b)=>(b.active-a.active)||a.name.localeCompare(b.name));
   V.innerHTML=`
   <div class="sec-head"><div><div class="h1">✋ ${esc(tsName())} 참가자</div>
-    <div class="sub">👥 멤버 탭에 등록된 멤버가 자동으로 여기 나와요 · 이번 시즌 팀 대항전에 나갈 사람만 체크 · 체크한 사람만 팀 구성·팀원 점수·팀 빌더에 나와요</div></div>
+    <div class="sub">👥 멤버 탭에 등록된 멤버가 자동으로 여기 나와요 · 이번 시즌 팀 대항전에 나갈 사람만 체크 · 체크한 사람만 팀 구성·명단표에 나와요 · ⚙️ 로 오더·심사위원 조정, 불가 포지션 설정</div></div>
     <div class="stat" style="min-width:120px;text-align:center"><div class="k">참가</div><div class="v">${on}<small> / ${S.players.length}명</small></div></div></div>
   <div class="card"><div class="row gap wrapr" style="margin-bottom:10px"><input class="inp search" data-i="pq" placeholder="🔍 닉네임 검색" value="${esc(UI.pq||'')}">
     ${A?'<button class="btn sm" data-a="allin">✅ 전원 참가</button><button class="btn sm" data-a="allout">💤 전원 해제</button>':'<span class="sub">참가 체크는 운영진만 할 수 있어요</span>'}</div>
-    ${S.players.length?`<div class="rg-grid">${list.map(p=>`<button class="rg-p ${p.active?'in':''}" data-a="ptog" data-v="${p.id}" ${A?'':'disabled'}>
-      <span class="t"><span>${p.active?'✅':'⬜'} ${esc(p.name)}</span><span class="m">${lane(p)}</span></span>
-      <span class="m">${esc(tierLbl(p))}</span></button>`).join('')}</div>`:'<div class="sub">멤버가 없어요 · 👥 멤버 탭에서 먼저 추가해 주세요</div>'}
+    ${S.players.length?`<div class="rg-grid">${list.map(p=>`<div class="rg-p ${p.active?'in':''}" data-a="ptog" data-v="${p.id}" role="button" tabindex="0">
+      <span class="t"><span>${p.active?'✅':'⬜'} ${esc(p.name)}</span><button class="btn sm" data-a="pset" data-v="${p.id}" title="점수·조정·불가 포지션">⚙️</button></span>
+      <span class="m">${lane(p)}${lane(p)?' · ':''}${esc(tierLbl(p))}</span>
+      <span class="m">기본 <b style="color:var(--gold2)">${totalBase(p)}점</b>${p.adj.length?` · ${adjIcons(p)} ${sgn(adjSum(p))}`:''}${p.no.length?` · 🚫 ${p.no.map(k=>PK[k].n).join('·')}`:''}</span></div>`).join('')}</div>`:'<div class="sub">멤버가 없어요 · 👥 멤버 탭에서 먼저 추가해 주세요</div>'}
   </div>`;
+}
+/* ⚙️ 참가자 설정 = 예전 🧮 팀원 점수 카드(mcard) 그대로 모달로 */
+function psetModal(id,focus=true){
+  const p=player(id);if(!p){UI.pset=null;closeModal();return}
+  UI.pset=id;
+  modal(`<div class="mh">⚙️ ${nmH(p)} 설정</div><div class="mgrid" style="grid-template-columns:1fr">${mcard(p)}</div>
+    <div class="mbtns"><button class="btn pri" data-a="mclose">완료</button></div>`,focus);
 }
 function renderTRule(){
   const o=UI.rtab;UI.rtab='team';renderRules();UI.rtab=o;
@@ -1764,7 +1773,7 @@ function renderTRule(){
 function renderBracket(){
   V.innerHTML=`
   <div class="sec-head"><div><div class="h1">🏆 대진 & 순위</div>
-    <div class="sub">팀 빌더의 팀으로 풀리그 또는 토너먼트 진행 · 풀리그는 경기를 눌러 세트스코어·게임시간 입력 (운영진) · 토너먼트는 팀 이름 탭 = 승리</div></div>
+    <div class="sub">🧩 팀 구성에서 등록한 팀으로 풀리그 또는 토너먼트 진행 · 풀리그는 경기를 눌러 세트스코어·게임시간 입력 (운영진) · 토너먼트는 팀 이름 탭 = 승리</div></div>
     <div class="seg big">${[['league','📊 풀리그'],['tour','🌳 토너먼트']].map(([k,n])=>`<button class="${UI.bmode===k?'on':''}" data-a="bmode" data-v="${k}">${n}</button>`).join('')}</div></div>
   ${UI.bmode==='league'?leagueView():tourView()}`;
 }
@@ -1861,7 +1870,7 @@ function renderCfg(){
   const ex=[...S.players].sort((a,b)=>b.adj.length-a.adj.length||totalBase(b)-totalBase(a))[0];
   V.innerHTML=`
   <div class="sec-head"><div><div class="h1">🧮 점수 기준 설정</div>
-    <div class="sub">여기서 바꾸면 멤버 점수 · 팀 빌더 · 명단표 · 공지에 전부 즉시 반영돼요</div></div></div>
+    <div class="sub">여기서 바꾸면 참가자 점수 · 팀 구성 · 명단표 · 공지에 전부 즉시 반영돼요</div></div></div>
   <div class="cfg">
     <div class="card"><div class="h2">🏅 티어 점수표 <span class="sub">${S.tiers.length}구간</span></div>
       <div class="cfg-list">${S.tiers.map((t,i)=>`<div class="cfg-row">
@@ -1921,7 +1930,7 @@ function renderRules(){
         <div><ul class="rl">
           ${POS.filter(P=>S.posB[P.k]).map(P=>`<li><span class="ic">${P.e}</span><div><b>주포지션 ${P.n} ${sgn(S.posB[P.k])}%</b><p>${S.posB[P.k]>0?`주포지션이 ${P.n}인 선수가 ${P.n}로 출전하면 점수 × ${100+S.posB[P.k]}%`:`주포지션이 ${P.n}인 선수는 기본값부터 × ${100+S.posB[P.k]}%`}</p></div></li>`).join('')}
           ${S.adjs.map(a=>`<li><span class="ic">${esc(a.e)}</span><div><b>${esc(a.n)} ${sgn(a.v)}점</b><p>${esc(a.d||'조정 항목')}${S.players.some(p=>p.adj.includes(a.id))?` (${S.players.filter(p=>p.adj.includes(a.id)).map(p=>esc(nmT(p))).join(', ')})`:''}</p></div></li>`).join('')}
-          <li><span class="ic">🎯</span><div><b>팀 총점 캡 ${S.cap}점</b><p>캡 초과 시 편성 불가 → 팀 빌더가 자동 경고</p></div></li>
+          <li><span class="ic">🎯</span><div><b>팀 총점 캡 ${S.cap}점</b><p>캡 초과 시 편성 불가 → 팀 구성에서 등록이 막혀요</p></div></li>
         </ul></div>
       </div>
       <div class="note">기본점수 = 티어점수 + 조정 항목. 라인 보정이 더해져 실제 출전 점수는 달라질 수 있어요.</div>
@@ -2318,7 +2327,7 @@ async function recView(id){
 /* ---------- 모달 & 토스트 ---------- */
 const M=$('#modal');
 function modal(html,focus=true,cls=''){M.innerHTML=`<div class="mbox ${cls}">${html}</div>`;M.classList.remove('hidden');if(focus){const f=M.querySelector('input.pin');if(f)setTimeout(()=>f.focus(),50)}}
-function closeModal(){if(VUP&&(VUP.step==='convert'||VUP.step==='upload'))return toast('변환·업로드가 끝날 때까지 기다려주세요','err');if(RUP&&RUP.busy)return;if(typeof gBusy==='function'&&gBusy())return;if(typeof gOnClose==='function')gOnClose();M.classList.add('hidden');M.innerHTML='';PENDING=null;UI.posM=null;NEW=null;GD=null;RD=null;BDRAFT=null;MD=null;RF=null;VUP=null;RUP=null}
+function closeModal(){if(VUP&&(VUP.step==='convert'||VUP.step==='upload'))return toast('변환·업로드가 끝날 때까지 기다려주세요','err');if(RUP&&RUP.busy)return;if(typeof gBusy==='function'&&gBusy())return;if(typeof gOnClose==='function')gOnClose();M.classList.add('hidden');M.innerHTML='';PENDING=null;UI.posM=null;UI.pset=null;NEW=null;GD=null;RD=null;BDRAFT=null;MD=null;RF=null;VUP=null;RUP=null}
 M.addEventListener('click',e=>{if(e.target===M)closeModal()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!M.classList.contains('hidden'))closeModal();else if(document.body.classList.contains('capture')){document.body.classList.remove('capture');fitSheet()}else if(SEL){SEL=null;render()}}});
 function ask(title,msg,fn,ok='확인'){modal(`<div class="mh">${title}</div><p class="mp">${msg}</p><div class="mbtns"><button class="btn" data-a="mclose">취소</button><button class="btn pink" data-a="yes">${ok}</button></div>`);PENDING=fn}
@@ -2472,7 +2481,8 @@ const ACT={
     else p.pos.push(k)}),
   adj:el=>commit(()=>{const p=P_(el),a=el.dataset.v;p.adj=p.adj.includes(a)?p.adj.filter(x=>x!==a):[...p.adj,a]}),
   base:el=>commit(()=>{const p=P_(el);p.base=clamp(baseOf(p)+(+el.dataset.v),-20,50);p.tier=''}),
-  posm:el=>posModal(+el.dataset.id),
+  posm:el=>{UI.pset=null;posModal(+el.dataset.id)},
+  pset:el=>psetModal(+el.dataset.v),
   posreset:el=>commit(()=>{const p=P_(el);p.pos=[];p.no=[];p.ps={}}),
   delp:el=>{const p=P_(el);if(!canEdit())return toast(RO_MSG,'err');ask('🗑 멤버 삭제',`'${esc(p.name)}' 님을 명단에서 삭제할까요?\n팀에 배치돼 있으면 같이 빠져요.`,()=>commit(()=>{S.players=S.players.filter(x=>x.id!==p.id);S.teams.forEach(t=>POS.forEach(P=>{if(t.slots[P.k]===p.id)t.slots[P.k]=null}))}),'삭제')},
   fpos:el=>{UI.fpos=el.dataset.v;render()},
