@@ -170,7 +170,9 @@ function startGamesSync() {
   }, e => console.error('ids sync', e)));
   // 👥 멤버 구성: 일반 내전용 티어·주라인·부라인 (members.js)
   GM.unsub.push(fs.onSnapshot(gCol('roster'), snap => {
-    const r = {}; snap.docs.forEach(d => { const v = d.data() || {}; r[Number(d.id)] = { tier: v.tier || '', main: v.main || '', sub: v.sub || '' } });
+    // pref = 1~5지망 순서, no = 불가 포지션 (멤버 탭에서 처음 고치기 전엔 없음 → main/sub 사용)
+    const lanes = a => Array.isArray(a) ? [...new Set(a.filter(k => G_POS.includes(k)))] : null;
+    const r = {}; snap.docs.forEach(d => { const v = d.data() || {}; r[Number(d.id)] = { tier: v.tier || '', main: v.main || '', sub: v.sub || '', pref: lanes(v.pref), no: lanes(v.no) } });
     GM.roster = r; if (gTabOpen()) render();
   }, e => console.error('roster sync', e)));
   // lol.ps 참고 승률 — 매일 오전 10시 netlify/functions/lps-daily.mjs가 갱신

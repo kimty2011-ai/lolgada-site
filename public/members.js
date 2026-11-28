@@ -30,16 +30,16 @@ function mListHTML(A) {
   const mainOf = p => rosterOf(p.id).main, laneN = k => S.players.filter(p => mainOf(p) === k).length;
   // 기본은 전체 멤버 티어순, 라인 탭은 그 라인이 주라인인 멤버만
   const list = S.players.filter(p => (v === 'all' || mainOf(p) === v) && (!q || p.name.toLowerCase().includes(q))).sort(byTier);
-  const row = p => { const r = rosterOf(p.id); return `<tr>
+  const row = p => { const r = rosterOf(p.id), m = mPref(p); return `<tr>
       <td class="g-nm"><b>${esc(p.name)}</b></td>
       <td>${A ? mSel(`data-c="mtier" data-id="${p.id}"`, r.tier, M_TIERS, '티어 미정') : mTierBadge(r.tier)}</td>
-      <td>${A ? mSel(`data-c="mmain" data-id="${p.id}"`, r.main, M_LANES(), '미정') : (mLane(r.main) || '<span class="sub">미정</span>')}</td>
-      <td>${A ? mSel(`data-c="msub" data-id="${p.id}"`, r.sub, M_LANES().filter(([k]) => k !== r.main), '없음') : (mLane(r.sub) || '<span class="sub">–</span>')}</td></tr>` };
+      <td><div class="prefs m-prefs">${G_POS.map(k => { const i = m.pref.indexOf(k), no = m.no.includes(k);
+        return `<button class="pf ${i >= 0 ? 'on' : ''} ${i === 0 ? 'p1' : ''} ${no ? 'no' : ''}" data-a="mpref" data-id="${p.id}" data-v="${k}" ${A ? '' : 'disabled'} title="${A ? '누를 때마다 지망 추가 → 🚫 불가 → 해제' : ''}"><span>${M_EMO[k] || PK[k].e}</span>${PK[k].n}${i >= 0 ? `<i>${i + 1}</i>` : no ? '<i>✕</i>' : ''}</button>` }).join('')}</div></td></tr>` };
   return `<div class="card"><div class="h2">📋 멤버 목록 <span class="sub">티어순</span>
       <input class="inp mla" style="width:180px" data-i="mq" placeholder="🔍 닉네임 검색" value="${esc(MEM.q)}"></div>
     <div class="g-seg m-lanes">${[['all', `전체 <span class="sub">${S.players.length}</span>`], ...G_POS.map(k => [k, `${mLane(k)} <span class="sub">${laneN(k)}</span>`])].map(([k, n]) => `<button class="chip ${v === k ? 'on' : ''}" data-a="msort" data-v="${k}">${n}</button>`).join('')}</div>
-    <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>주라인</th><th>부라인</th></tr></thead>
-      <tbody>${list.map(row).join('') || `<tr><td colspan="4" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
+    <div class="g-scroll"><table class="g-tbl g-rank m-tbl"><thead><tr><th>닉네임</th><th>티어</th><th>포지션 <span class="sub">숫자 = 지망 순서 (1지망 = 주라인) · ✕ = 불가</span></th></tr></thead>
+      <tbody>${list.map(row).join('') || `<tr><td colspan="3" class="empty-note">${v === 'all' ? '멤버가 없어요' : `${mLane(v)}이(가) 주라인인 멤버가 아직 없어요`}</td></tr>`}</tbody></table></div></div>`;
 }
 
 // ❔ 미등록 닉네임: 멤버로 연결 안 된 게임 닉네임별 통계 (전 시즌·전 종류)
@@ -85,7 +85,27 @@ function mSupplyHTML() {
     <div class="sub" style="margin-top:10px">진한 막대 = 주라인 · 연한 막대 = 부라인까지 포함${none ? ` · ❔ 주라인 미정 <b style="color:var(--txt)">${none}명</b> — 👥 멤버 탭에서 정해주세요` : ' · 모든 멤버 주라인 등록 완료 👏'}</div></div>`;
 }
 
-const mWrite =(id, r) => fb.fs.setDoc(gDoc('roster', String(id)), { tier: r.tier || '', main: r.main || '', sub: r.sub || '', at: Date.now() });
+const mWrite =(id, r) => fb.fs.setDoc(gDoc('roster', String(id)), { tier: r.tier || '', main: r.main || '', sub: r.sub || '',
+  ...(Array.isArray(r.pref) ? { pref: r.pref, no: r.no || [] } : {}), at: Date.now() });
+// 지망·불가: 멤버 탭에서 한 번이라도 고쳤으면 roster.pref/no, 아니면 주/부라인 + 예전 팀 대항전 3~5지망·불가
+function mPref(p) {
+  const r = rosterOf(p.id);
+  if (Array.isArray(r.pref)) return { pref: r.pref, no: (r.no || []).filter(k => !r.pref.includes(k)) };
+  const ml = [r.main, r.sub].filter((k, i, a) => PK[k] && a.indexOf(k) === i);
+  const pref = ml.length ? [...ml, ...(p.pos || []).filter(k => !ml.includes(k))] : [...(p.pos || [])];
+  return { pref, no: (p.no || []).filter(k => !pref.includes(k)) };
+}
+async function mPrefSave(el) {
+  if (!isAdmin()) { toast('운영진만 바꿀 수 있어요', 'err'); return }
+  const id = Number(el.dataset.id), k = el.dataset.v, p = player(id); if (!p) return;
+  let { pref, no } = mPref(p); pref = [...pref]; no = [...no];
+  if (pref.includes(k)) { pref = pref.filter(x => x !== k); no.push(k) } // 지망 → 불가
+  else if (no.includes(k)) no = no.filter(x => x !== k);                // 불가 → 해제
+  else pref.push(k);                                                    // 해제 → 다음 지망
+  const cur = { ...rosterOf(id), pref, no, main: pref[0] || '', sub: pref[1] || '' };
+  GM.roster = { ...(GM.roster || {}), [id]: cur }; render();
+  try { await mWrite(id, cur) } catch (e) { console.error(e); toast('저장 실패 — 다시 시도해 주세요', 'err') }
+}
 async function mSave(el, field) {
   if (!isAdmin()) { toast('운영진만 바꿀 수 있어요', 'err'); render(); return }
   const id = Number(el.dataset.id), cur = { ...rosterOf(id) }; cur[field] = el.value || '';
@@ -121,7 +141,7 @@ async function mNewSave() {
   if (r.tier || r.main) { GM.roster = { ...(GM.roster || {}), [id]: r }; render(); try { await mWrite(id, r) } catch (e) { console.error(e); toast('티어·라인 저장 실패 — 목록에서 다시 골라주세요', 'err') } }
 }
 Object.assign(CHG, { mtier: el => mSave(el, 'tier'), mmain: el => mSave(el, 'main'), msub: el => mSave(el, 'sub') });
-Object.assign(ACT, { msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: () => mNewModal(), mnreg: el => mNewModal(el.dataset.v), mnsave: mNewSave });
+Object.assign(ACT, { mpref: mPrefSave, msort: el => { MEM.view = el.dataset.v; render() }, mtab: el => { MEM.tab = el.dataset.v; render() }, mnew: () => mNewModal(), mnreg: el => mNewModal(el.dataset.v), mnsave: mNewSave });
 Object.assign(INP, { mq: el => { MEM.q = el.value; const pos = el.selectionStart; render(); const n = $('[data-i="mq"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos) } catch (_) {} } } });
 
 document.head.append(Object.assign(document.createElement('style'), { textContent: `
@@ -132,4 +152,5 @@ document.head.append(Object.assign(document.createElement('style'), { textConten
 .m-lanes{margin:0 0 10px;flex-wrap:wrap}
 .m-cnt{display:inline-block;min-width:18px;padding:0 5px;border-radius:99px;background:var(--pink,#ff5d8f);color:#fff;font-size:11px;margin-left:4px}
 .m-merge{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.m-prefs{min-width:260px;max-width:340px}.m-prefs .pf{cursor:pointer;padding:5px 2px}.m-prefs .pf:disabled{cursor:default}
 ` }));
